@@ -94,10 +94,16 @@ orbitControls.update();
 
 (async () => {
   window.materials = [];
+
+  const material = new THREE.MeshStandardMaterial({
+    color: 0xFFFFFF,
+    vertexColors: true,
+  });
+
   const objs = modelFiles.filter(m => /\.obj/.test(m));
   // console.log('objs', objs);
   const manager = new THREE.LoadingManager();
-  for (let i = 0; i < 10000; i++) {
+  for (let i = 0; i < 200; i++) {
     console.log(i);
     const u = `models/${objs[i]}`;
 
@@ -128,9 +134,21 @@ orbitControls.update();
     const o = await p2;
     o.traverse(o => {
       if (o.isMesh) {
-        o.material = materials;
+        // o.material = materials;
+        o.material = material;
+        const colors = new Float32Array(o.geometry.attributes.position.array.length);
+        for (let i = 0; i < colors.length; i += 3) {
+          colors[i] = materials[0].color.r;
+          colors[i+1] = materials[0].color.g;
+          colors[i+2] = materials[0].color.b;
+        }
+        o.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
       }
     });
+    const x = i%20;
+    const z = -Math.floor(i/20);
+    o.position.x = -20/2 + x;
+    o.position.z = z;
     container.add(o);
 
     window.materials.push(materials);
