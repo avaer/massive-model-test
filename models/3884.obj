@@ -1,0 +1,8 @@
+mtllib 3884.mtl
+v 1 0 1
+v 1 0 -1
+v -1 0 -1
+v -1 0 1
+usemtl mat.61
+f 1 2 3
+f 1 3 4

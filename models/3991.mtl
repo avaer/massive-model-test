@@ -1,0 +1,7 @@
+newmtl tex.35
+d 1
+map_Kd 35.png
+newmtl mat.6449
+Kd 0.6156863 0.5294118 0.3882353
+newmtl mat.8739
+Kd 0.5490196 0.4901961 0.2196078

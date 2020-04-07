@@ -1,0 +1,5 @@
+newmtl mat.9098
+Kd 0.2588235 0.2235294 0.01960784
+newmtl tex.26
+d 1
+map_Kd 26.png

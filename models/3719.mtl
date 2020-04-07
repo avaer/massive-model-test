@@ -1,0 +1,5 @@
+newmtl mat.0
+Kd 0 0 0.003921569
+newmtl tex.22
+d 1
+map_Kd 22.png

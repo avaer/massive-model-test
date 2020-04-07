@@ -1,0 +1,5 @@
+newmtl mat.11140
+Kd 0.1333333 0.1333333 0
+newmtl tex.14
+d 1
+map_Kd 14.png

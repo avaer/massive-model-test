@@ -1,0 +1,8 @@
+mtllib 7767.mtl
+v 1 0 1
+v 1 0 -1
+v -1 0 -1
+v -1 0 1
+usemtl mat.0
+f 1 2 3
+f 1 3 4

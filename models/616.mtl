@@ -1,0 +1,6 @@
+newmtl tex.0
+d 1
+map_Kd 0.png
+newmtl tex.16
+d 1
+map_Kd 16.png

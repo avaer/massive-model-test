@@ -1,0 +1,16 @@
+newmtl mat.7116
+Kd 0.9843137 0.7607843 0.3333333
+newmtl mat.6961
+Kd 0.772549 0.5686275 0.1529412
+newmtl tex.2
+d 1
+map_Kd 2.png
+newmtl mat.4762
+Kd 0.4666667 0.2980392 0.1411765
+newmtl tex.3
+d 1
+map_Kd 3.png
+newmtl mat.6814
+Kd 0.5215687 0.3960784 0.1529412
+newmtl mat.9015
+Kd 0.8392157 0.7294118 0.1647059
