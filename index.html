@@ -17,7 +17,7 @@
     <script src="https://kit.fontawesome.com/0735724151.js" crossorigin="anonymous"></script>
     <!-- <script type="module" src="world.js"></script> -->
   </head>
-  <body class=body>
+  <body>
     <header>
       <!-- <a href="https://browser.exokit.org">
         <img class=icon src="logo.svg"/>
@@ -29,9 +29,197 @@
     </header>
     <canvas id=canvas></canvas>
 <script type=module>
-import files from './files.js';
+import THREE from './three.module.js';
+import {OrbitControls} from './OrbitControls.js';
+import {OBJLoader2} from './OBJLoader2.js';
+import {MTLLoader} from './MTLLoader.js';
+import modelFiles from './model-files.js';
 
-console.log('files', files);
+function makePromise() {
+  let accept, reject;
+  const p = new Promise((a, r) => {
+    accept = a;
+    reject = r;
+  });
+  p.accept = accept;
+  p.reject = reject;
+  return p;
+}
+
+const canvas = document.getElementById('canvas');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: true,
+});
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.sortObjects = false;
+renderer.physicallyCorrectLights = true;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xEEEEEE);
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.set(0, 0.5, 1.5);
+camera.rotation.order = 'YXZ';
+renderer.render(scene, camera);
+
+const ambientLight = new THREE.AmbientLight(0xFFFFFF);
+scene.add(ambientLight);
+
+const directionalLight = new THREE.DirectionalLight(0xFFFFFF, 3);
+directionalLight.position.set(0.5, 1, 0.5).multiplyScalar(100);
+directionalLight.castShadow = true;
+directionalLight.shadow.mapSize.width = 1024;
+directionalLight.shadow.mapSize.height = 1024;
+directionalLight.shadow.camera.near = 0.5;
+directionalLight.shadow.camera.far = 500;
+scene.add(directionalLight);
+
+const directionalLight2 = new THREE.DirectionalLight(0xFFFFFF, 3);
+directionalLight2.position.set(-0.5, -0.1, 0.5).multiplyScalar(100);
+scene.add(directionalLight2);
+
+const container = new THREE.Object3D();
+scene.add(container);
+
+const orbitControls = new OrbitControls(camera, renderer.domElement, document);
+orbitControls.target.copy(camera.position).add(new THREE.Vector3(0, 0, -1.5));
+orbitControls.screenSpacePanning = true;
+// orbitControls.enabled = !!loginToken;
+orbitControls.enableMiddleZoom = false;
+orbitControls.update();
+
+(async () => {
+  window.materials = [];
+  const objs = modelFiles.filter(m => /\.obj/.test(m));
+  // console.log('objs', objs);
+  const manager = new THREE.LoadingManager();
+  for (let i = 0; i < 10000; i++) {
+    console.log(i);
+    const u = `models/${objs[i]}`;
+
+    const p = makePromise();
+    new MTLLoader( manager )
+      // .setPath( '/' )
+      .load(u.replace('.obj', '.mtl'), function ( materials ) {
+        materials.preload();
+        p.accept(materials);
+        // materials.preload();
+      });
+    let materials = await p;
+    materials = Object.keys(materials.materials).map(k => materials.materials[k]);
+
+    /* new OBJLoader( manager )
+      .setMaterials( materials )
+      .setPath( 'models/obj/male02/' )
+      .load( 'male02.obj', function ( object ) {
+        object.position.y = - 95;
+        scene.add( object );
+      }, onProgress, onError ); */
+    
+    const p2 = makePromise();
+    const loader = new OBJLoader2(manager);
+    // window.loader = loader;
+    loader.parser.setMaterials( materials );
+    loader.load(u, p2.accept, function onProgress() {}, p2.reject);
+    const o = await p2;
+    o.traverse(o => {
+      if (o.isMesh) {
+        o.material = materials;
+      }
+    });
+    container.add(o);
+
+    window.materials.push(materials);
+    // console.log('got materials', o, materials);
+  }
+})();
+
+function animate() {
+  orbitControls.enabled && orbitControls.update();
+  
+  /* if (currentSession) {
+    for (let i = 0; i < 2; i++) {
+      const controller = renderer.xr.getController(i);
+      if (controller.userData.data) {
+        if (controller.userData.data.handedness === 'left') {
+          uiMesh.position.copy(controller.position);
+          uiMesh.quaternion.copy(controller.quaternion);
+        } else if (controller.userData.data.handedness === 'right') {
+          _updateRaycasterFromObject(localRaycaster, controller);
+          _updateTool(localRaycaster);
+        }
+      }
+    }
+
+    _updateControllers();
+
+    updatePlayerFromXr(renderer.xr, camera);
+  } else {
+    const speed = 0.015 * (keys.shift ? 3 : 1);
+    const cameraEuler = camera.rotation.clone();
+    cameraEuler.x = 0;
+    cameraEuler.z = 0;
+    const extraVelocity = new THREE.Vector3();
+    if (keys.left) {
+      extraVelocity.add(new THREE.Vector3(-1, 0, 0).applyEuler(cameraEuler));
+    }
+    if (keys.right) {
+      extraVelocity.add(new THREE.Vector3(1, 0, 0).applyEuler(cameraEuler));
+    }
+    if (keys.up) {
+      extraVelocity.add(new THREE.Vector3(0, 0, -1).applyEuler(cameraEuler));
+    }
+    if (keys.down) {
+      extraVelocity.add(new THREE.Vector3(0, 0, 1).applyEuler(cameraEuler));
+    }
+    if (extraVelocity.length() > 0) {
+      extraVelocity.normalize().multiplyScalar(speed);
+    }
+    velocity.add(extraVelocity);
+    camera.position.add(velocity);
+    velocity.multiplyScalar(0.7);
+    
+    orbitControls.target.copy(camera.position).add(new THREE.Vector3(0, 0, -1.5).applyQuaternion(camera.quaternion));
+    
+    updatePlayerFromCamera(camera);
+  }
+
+  for (let i = 0; i < peerConnections.length; i++) {
+    const peerConnection = peerConnections[i];
+    peerConnection.rig && peerConnection.rig.update();
+  }
+
+  tickObjectScript(objectState);
+
+  if (ammo) {
+    ammo.simulate();
+    for (let i = 0; i < objectMeshes.length; i++) {
+      ammo.updateObjectMesh(objectMeshes[i]);
+    }
+  } */
+
+  /* const thirdperson = selectedTool === 'thirdperson';
+  let oldCameraPosition;
+  if (thirdperson) {
+    oldCameraPosition = camera.position.clone();
+    camera.position.add(new THREE.Vector3(0, 0, 2).applyQuaternion(camera.quaternion));
+  } */
+  renderer.render(scene, camera);
+  /* if (thirdperson) {
+    camera.position.copy(oldCameraPosition);
+  } */
+}
+renderer.setAnimationLoop(animate);
+
+window.addEventListener('resize', e => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+});
 </script>
   </body>
 </html>
