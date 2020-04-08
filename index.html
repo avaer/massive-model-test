@@ -95,10 +95,36 @@ orbitControls.update();
 (async () => {
   window.materials = [];
 
+  const NUM_POSITIONS = 512 * 1024;
+
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(NUM_POSITIONS*3);
+  let positionsIndex = 0;
+  const positionsAttribute = new THREE.BufferAttribute(positions, 3);
+  geometry.setAttribute('position', positionsAttribute);
+  const normals = new Float32Array(NUM_POSITIONS*3);
+  let normalsIndex = 0;
+  const normalsAttribute = new THREE.BufferAttribute(normals, 3);
+  geometry.setAttribute('normal', normalsAttribute);
+  const colors = new Float32Array(NUM_POSITIONS*3);
+  let colorsIndex = 0;
+  const colorsAttribute = new THREE.BufferAttribute(colors, 3);
+  geometry.setAttribute('color', colorsAttribute);
+  /* const index = new Uint16Array(NUM_POSITIONS*3);
+  let indexIndex = 0;
+  const indexAttribute = new THREE.BufferAttribute(index, 1);
+  geometry.setIndex(indexAttribute); */
+
+  window.geometry = geometry;
+
   const material = new THREE.MeshStandardMaterial({
     color: 0xFFFFFF,
     vertexColors: true,
   });
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.frustumCulled = false;
+  container.add(mesh);
 
   const objs = modelFiles.filter(m => /\.obj/.test(m));
   // console.log('objs', objs);
@@ -131,25 +157,44 @@ orbitControls.update();
     // window.loader = loader;
     loader.parser.setMaterials( materials );
     loader.load(u, p2.accept, function onProgress() {}, p2.reject);
+
+    const x = i%20;
+    const z = -Math.floor(i/20);
+
     const o = await p2;
     o.traverse(o => {
       if (o.isMesh) {
         // o.material = materials;
         o.material = material;
-        const colors = new Float32Array(o.geometry.attributes.position.array.length);
-        for (let i = 0; i < colors.length; i += 3) {
-          colors[i] = materials[0].color.r;
-          colors[i+1] = materials[0].color.g;
-          colors[i+2] = materials[0].color.b;
+        o.geometry.applyMatrix4(new THREE.Matrix4().makeTranslation(-20/2 + x, 0, z));
+        new Float32Array(positions.buffer, positions.byteOffset + positionsIndex*Float32Array.BYTES_PER_ELEMENT, positions.byteOffset + (positionsIndex + o.geometry.attributes.position.array.length)*Float32Array.BYTES_PER_ELEMENT)
+          .set(o.geometry.attributes.position.array, 0);
+        /* console.log('slice set', positionsIndex, positions.slice(positionsIndex, positionsIndex + o.geometry.attributes.position.array.length), o.geometry.attributes.position.array);
+        debugger; */
+        positionsIndex += o.geometry.attributes.position.array.length;
+        new Float32Array(normals.buffer, normals.byteOffset + normalsIndex*Float32Array.BYTES_PER_ELEMENT, normals.byteOffset + (normalsIndex + o.geometry.attributes.normal.array.length)*Float32Array.BYTES_PER_ELEMENT)
+          .set(o.geometry.attributes.normal.array);
+        normalsIndex += o.geometry.attributes.normal.array.length;
+        /* if (o.geometry.index) {
+          debugger;
+        } */
+        // index.slice(indexIndex, indexIndex + o.geometry.index.array.length).set(o.geometry.index.array);
+        // indexIndex += o.geometry.index.array.length;
+        for (let i = 0; i < o.geometry.attributes.position.array.length; i += 3) {
+          colors[colorsIndex++] = materials[0].color.r;
+          colors[colorsIndex++] = materials[0].color.g;
+          colors[colorsIndex++] = materials[0].color.b;
         }
-        o.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        // geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        positionsAttribute.needsUpdate = true;
+        normalsAttribute.needsUpdate = true;
+        colorsAttribute.needsUpdate = true;
       }
     });
-    const x = i%20;
-    const z = -Math.floor(i/20);
-    o.position.x = -20/2 + x;
+    /* o.position.x = -20/2 + x;
     o.position.z = z;
-    container.add(o);
+    container.add(o); */
 
     window.materials.push(materials);
     // console.log('got materials', o, materials);
