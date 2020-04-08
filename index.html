@@ -96,36 +96,43 @@ orbitControls.update();
   window.materials = [];
 
   const NUM_POSITIONS = 2 * 1024 * 1024;
-
-  const geometry = new THREE.BufferGeometry();
-  const positions = new Float32Array(NUM_POSITIONS*3);
+  let currentMesh = null;
   let positionsIndex = 0;
-  const positionsAttribute = new THREE.BufferAttribute(positions, 3);
-  geometry.setAttribute('position', positionsAttribute);
-  const normals = new Float32Array(NUM_POSITIONS*3);
   let normalsIndex = 0;
-  const normalsAttribute = new THREE.BufferAttribute(normals, 3);
-  geometry.setAttribute('normal', normalsAttribute);
-  const colors = new Float32Array(NUM_POSITIONS*3);
   let colorsIndex = 0;
-  const colorsAttribute = new THREE.BufferAttribute(colors, 3);
-  geometry.setAttribute('color', colorsAttribute);
-  /* const index = new Uint16Array(NUM_POSITIONS*3);
-  let indexIndex = 0;
-  const indexAttribute = new THREE.BufferAttribute(index, 1);
-  geometry.setIndex(indexAttribute); */
-  geometry.setDrawRange(0, 0);
-
-  window.geometry = geometry;
 
   const material = new THREE.MeshStandardMaterial({
     color: 0xFFFFFF,
     vertexColors: true,
   });
+  const _makeMesh = () => {
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(NUM_POSITIONS*3);
+    positionsIndex = 0;
+    const positionsAttribute = new THREE.BufferAttribute(positions, 3);
+    geometry.setAttribute('position', positionsAttribute);
+    const normals = new Float32Array(NUM_POSITIONS*3);
+    normalsIndex = 0;
+    const normalsAttribute = new THREE.BufferAttribute(normals, 3);
+    geometry.setAttribute('normal', normalsAttribute);
+    const colors = new Float32Array(NUM_POSITIONS*3);
+    colorsIndex = 0;
+    const colorsAttribute = new THREE.BufferAttribute(colors, 3);
+    geometry.setAttribute('color', colorsAttribute);
+    /* const index = new Uint16Array(NUM_POSITIONS*3);
+    let indexIndex = 0;
+    const indexAttribute = new THREE.BufferAttribute(index, 1);
+    geometry.setIndex(indexAttribute); */
+    geometry.setDrawRange(0, 0);
 
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.frustumCulled = false;
-  container.add(mesh);
+    // window.geometry = geometry;
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.frustumCulled = false;
+    container.add(mesh);
+    currentMesh = mesh;
+    // return mesh;
+  };
 
   const objs = modelFiles.filter(m => /\.obj/.test(m));
   // console.log('objs', objs);
@@ -181,16 +188,29 @@ orbitControls.update();
     };
     _traverseAsync(o, async o => {
       if (o.isMesh) {
+        if (!currentMesh || (positionsIndex + o.geometry.attributes.position.array.length) >= currentMesh.geometry.attributes.position.array.length) {
+          _makeMesh();
+        }
+        const {geometry, material} = currentMesh;
+        const positionsAttribute = geometry.attributes.position;
+        const positions = positionsAttribute.array;
+        const normalsAttribute = geometry.attributes.normal;
+        const normals = normalsAttribute.array;
+        const colorsAttribute = geometry.attributes.color;
+        const colors = colorsAttribute.array;
+      
         // o.material = materials;
         o.material = material;
-        o.geometry.applyMatrix4(new THREE.Matrix4().makeTranslation(-50/2 + x, 0, z));
-        new Float32Array(positions.buffer, positions.byteOffset + positionsIndex*Float32Array.BYTES_PER_ELEMENT, positions.byteOffset + (positionsIndex + o.geometry.attributes.position.array.length)*Float32Array.BYTES_PER_ELEMENT)
-          .set(o.geometry.attributes.position.array, 0);
+        o.geometry
+          .applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI)))
+          .applyMatrix4(new THREE.Matrix4().makeTranslation(-50/2 + x, 0, z));
+        new Float32Array(positions.buffer, positions.byteOffset + positionsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.position.array.length)
+          .set(o.geometry.attributes.position.array);
         positionsAttribute.updateRange.offset = positionsIndex;
         positionsAttribute.updateRange.count = o.geometry.attributes.position.array.length;
         positionsIndex += o.geometry.attributes.position.array.length;
 
-        new Float32Array(normals.buffer, normals.byteOffset + normalsIndex*Float32Array.BYTES_PER_ELEMENT, normals.byteOffset + (normalsIndex + o.geometry.attributes.normal.array.length)*Float32Array.BYTES_PER_ELEMENT)
+        new Float32Array(normals.buffer, normals.byteOffset + normalsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.normal.array.length)
           .set(o.geometry.attributes.normal.array);
         normalsAttribute.updateRange.offset = normalsIndex;
         normalsAttribute.updateRange.count = o.geometry.attributes.normal.array.length;
