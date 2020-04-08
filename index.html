@@ -134,15 +134,23 @@ orbitControls.update();
     const u = `models/${objs[i]}`;
 
     const p = makePromise();
-    new MTLLoader( manager )
+    new MTLLoader(manager)
       // .setPath( '/' )
-      .load(u.replace('.obj', '.mtl'), function ( materials ) {
+      .load(u.replace('.obj', '.mtl'), materials => {
         materials.preload();
         p.accept(materials);
         // materials.preload();
       });
     let materials = await p;
     materials = Object.keys(materials.materials).map(k => materials.materials[k]);
+
+/* 0: {start: 0, count: 609, materialIndex: 0}
+1: {start: 609, count: 18, materialIndex: 1}
+2: {start: 627, count: 21, materialIndex: 1}
+3: {start: 648, count: 168, materialIndex: 1}
+4: {start: 816, count: 24, materialIndex: 1}
+5: {start: 840, count: 36, materialIndex: 1}
+6: {start: 876, count: 36, materialIndex: 1} */
 
     /* new OBJLoader( manager )
       .setMaterials( materials )
@@ -180,12 +188,26 @@ orbitControls.update();
         } */
         // index.slice(indexIndex, indexIndex + o.geometry.index.array.length).set(o.geometry.index.array);
         // indexIndex += o.geometry.index.array.length;
-        for (let i = 0; i < o.geometry.attributes.position.array.length; i += 3) {
-          colors[colorsIndex++] = materials[0].color.r;
-          colors[colorsIndex++] = materials[0].color.g;
-          colors[colorsIndex++] = materials[0].color.b;
+        if (o.geometry.groups.length > 0) {
+          for (let i = 0; i < o.geometry.groups.length; i++) {
+            const group = o.geometry.groups[i];
+            const {start, count, materialIndex} = group;
+            const material = materials[materialIndex];
+            for (let j = start; j < start + count; j++) {
+              colors[colorsIndex + j*3] = material.color.r;
+              colors[colorsIndex + j*3 + 1] = material.color.g;
+              colors[colorsIndex + j*3 + 2] = material.color.b;
+            }
+          }
+          colorsIndex += o.geometry.attributes.position.array.length;
+        } else {
+          const [material] = materials;
+          for (let i = 0; i < o.geometry.attributes.position.array.length; i += 3) {
+            colors[colorsIndex++] = material.color.r;
+            colors[colorsIndex++] = material.color.g;
+            colors[colorsIndex++] = material.color.b;
+          }
         }
-        // geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
         positionsAttribute.needsUpdate = true;
         normalsAttribute.needsUpdate = true;
