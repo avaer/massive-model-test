@@ -246,7 +246,7 @@ orbitControls.update();
           normalsAttribute.onUploadCallback = null;
         };
         colorsAttribute.needsUpdate = true;
-        colorsAttribute.onUploadCallback = () => () => {
+        colorsAttribute.onUploadCallback = () => {
           ps[2].accept();
           colorsAttribute.onUploadCallback = null;
         };
