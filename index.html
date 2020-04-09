@@ -134,7 +134,9 @@ orbitControls.update();
   const objs = modelFiles.filter(m => /\.obj/.test(m));
   // console.log('objs', objs);
   const manager = new THREE.LoadingManager();
-  for (let i = 0; i < 10000; i++) {
+  const rowSize = 10;
+  const numItems = 10;
+  for (let i = 0; i < numItems; i++) {
     console.log(i);
     const u = `models/${objs[i]}`;
 
@@ -163,8 +165,8 @@ orbitControls.update();
     loader.parser.setMaterials( materials );
     loader.load(u, p2.accept, function onProgress() {}, p2.reject);
 
-    const x = i%50;
-    const z = -Math.floor(i/50);
+    const x = i%rowSize;
+    const z = -Math.floor(i/rowSize);
 
     const o = await p2;
     const _traverseAsync = async (o, fn) => {
@@ -192,7 +194,7 @@ orbitControls.update();
         o.material = material;
         o.geometry
           .applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI)))
-          .applyMatrix4(new THREE.Matrix4().makeTranslation(-50/2 + x, 0, z));
+          .applyMatrix4(new THREE.Matrix4().makeTranslation(-rowSize/2 + x, 0, z));
         new Float32Array(positions.buffer, positions.byteOffset + positionsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.position.array.length)
           .set(o.geometry.attributes.position.array);
         positionsAttribute.updateRange.offset = positionsIndex;
