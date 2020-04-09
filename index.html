@@ -124,8 +124,6 @@ orbitControls.update();
     geometry.setIndex(indexAttribute); */
     geometry.setDrawRange(0, 0);
 
-    // window.geometry = geometry;
-
     const mesh = new THREE.Mesh(geometry, material);
     mesh.frustumCulled = false;
     container.add(mesh);
@@ -254,7 +252,7 @@ orbitControls.update();
       }
     });
 
-    window.materials.push(materials);
+    // window.materials.push(materials);
     // console.log('got materials', o, materials);
   }
 })();
