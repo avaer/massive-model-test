@@ -254,27 +254,36 @@ const worker = _makeWasmWorker();
           }
         }
 
-        const ps = Array(3);
+        /* const ps = Array(3);
         for (let i = 0; i < ps.length; i++) {
           ps[i] = makePromise();
-        }
+        } */
+        /* const positionsBuffer = renderer.attributes.get(positionsAttribute);
+        if (!positionsBuffer.buffer) {
+          debugger;
+        } */
         positionsAttribute.needsUpdate = true;
-        positionsAttribute.onUploadCallback = () => {
+        renderer.attributes.update(positionsAttribute, 34962);
+        /* positionsAttribute.onUploadCallback = () => {
           ps[0].accept();
           positionsAttribute.onUploadCallback = null;
-        };
+        }; */
+        // const normalsBuffer = renderer.attributes.get(normalsAttribute);
         normalsAttribute.needsUpdate = true;
-        normalsAttribute.onUploadCallback = () => {
+        renderer.attributes.update(normalsAttribute, 34962);
+        /* normalsAttribute.onUploadCallback = () => {
           ps[1].accept();
           normalsAttribute.onUploadCallback = null;
-        };
+        }; */
+        // const colorsBuffer = renderer.attributes.get(colorsAttribute);
         colorsAttribute.needsUpdate = true;
-        colorsAttribute.onUploadCallback = () => {
+        renderer.attributes.update(colorsAttribute, 34962);
+        /* colorsAttribute.onUploadCallback = () => {
           ps[2].accept();
           colorsAttribute.onUploadCallback = null;
-        };
+        }; */
         geometry.setDrawRange(0, positionsIndex/3);
-        await Promise.all(ps);
+        // await Promise.all(ps);
       }
     });
 
