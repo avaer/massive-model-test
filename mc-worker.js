@@ -137,6 +137,7 @@ const _handleMessage = data => {
         result: {
           positions: outPs,
           normals: outNs,
+          colors: outCs,
           arrayBuffer,
         },
       }, [arrayBuffer]);
