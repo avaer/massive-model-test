@@ -44,6 +44,30 @@ function makePromise() {
   p.reject = reject;
   return p;
 }
+const _makeWasmWorker = () => {
+  let cbs = [];
+  const w = new Worker('mc-worker.js');
+  w.onmessage = e => {
+    const {data} = e;
+    const {error, result} = data;
+    cbs.shift()(error, result);
+  };
+  w.onerror = err => {
+    console.warn(err);
+  };
+  w.request = (req, transfers) => new Promise((accept, reject) => {
+    w.postMessage(req, transfers);
+
+    cbs.push((err, result) => {
+      if (!err) {
+        accept(result);
+      } else {
+        reject(err);
+      }
+    });
+  });
+  return w;
+};
 
 const canvas = document.getElementById('canvas');
 canvas.width = window.innerWidth;
@@ -91,9 +115,9 @@ orbitControls.screenSpacePanning = true;
 orbitControls.enableMiddleZoom = false;
 orbitControls.update();
 
-(async () => {
-  window.materials = [];
+const worker = _makeWasmWorker();
 
+(async () => {
   const NUM_POSITIONS = 2 * 1024 * 1024;
   let currentMesh = null;
   let positionsIndex = 0;
@@ -257,6 +281,26 @@ orbitControls.update();
     // window.materials.push(materials);
     // console.log('got materials', o, materials);
   }
+
+  const positions = currentMesh.geometry.attributes.position.array;
+  const normals = currentMesh.geometry.attributes.normal.array;
+  const colors = currentMesh.geometry.attributes.color.array;
+  const mins = [-2, 0, -2];
+  const maxs = [2, 0, 2];
+  const scales = [1, 1, 1];
+  const arrayBuffer = new ArrayBuffer(3 * 1024 * 1024);
+  worker.request({
+    method: 'chunk',
+    positions,
+    normals,
+    colors,
+    mins,
+    maxs,
+    scales,
+    arrayBuffer,
+  }, [arrayBuffer]).then(res => {
+    console.log('got res', res);
+  });
 })();
 
 function animate() {
