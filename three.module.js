@@ -23894,6 +23894,8 @@ function WebGLRenderer( parameters ) {
 
 	this.shadowMap = shadowMap;
 
+	this.attributes = attributes;
+
 	// API
 
 	this.getContext = function () {
