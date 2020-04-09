@@ -193,15 +193,7 @@ const worker = _makeWasmWorker();
     const z = -Math.floor(i/rowSize);
 
     const o = await p2;
-    const _traverseAsync = async (o, fn) => {
-      await fn(o);
-      if (o.children) {
-        for (let i = 0; i < o.children.length; i++) {
-          await _traverseAsync(o.children[i], fn);
-        }
-      }
-    };
-    _traverseAsync(o, async o => {
+    o.traverse(o => {
       if (o.isMesh) {
         if (!currentMesh || (positionsIndex + o.geometry.attributes.position.array.length) >= currentMesh.geometry.attributes.position.array.length) {
           _makeMesh();
