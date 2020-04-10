@@ -154,7 +154,7 @@ const meshes = [];
     geometry.setAttribute('color', colorsAttribute);
     const uvs = new Float32Array(NUM_POSITIONS*2);
     uvsIndex = 0;
-    const uvsAttribute = new THREE.BufferAttribute(uvs, 3);
+    const uvsAttribute = new THREE.BufferAttribute(uvs, 2);
     geometry.setAttribute('uv', uvsAttribute);
     /* const index = new Uint16Array(NUM_POSITIONS*3);
     let indexIndex = 0;
