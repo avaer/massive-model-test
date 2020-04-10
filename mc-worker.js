@@ -88,6 +88,7 @@ const _handleMessage = data => {
       const outNumPositions = allocator.alloc(Uint32Array, numSlots);
       const outNumNormals = allocator.alloc(Uint32Array, numSlots);
       const outNumColors = allocator.alloc(Uint32Array, numSlots);
+
       self.Module._doChunk(
         positions.offset,
         positions.length,

@@ -30,6 +30,7 @@
 <script type=module>
 import THREE from './three.module.js';
 import {OrbitControls} from './OrbitControls.js';
+import {GLTFLoader} from './GLTFLoader.js';
 import {OBJLoader2} from './OBJLoader2.js';
 import {MTLLoader} from './MTLLoader.js';
 import modelFiles from './model-files.js';
@@ -119,6 +120,7 @@ orbitControls.update();
 
 const worker = _makeWasmWorker();
 
+const meshes = [];
 (async () => {
   const NUM_POSITIONS = 2 * 1024 * 1024;
   let currentMesh = null;
@@ -196,90 +198,71 @@ const worker = _makeWasmWorker();
     const x = i%rowSize;
     const z = -Math.floor(i/rowSize);
 
+    const _mergeMesh = o => {
+      if (!currentMesh || (positionsIndex + o.geometry.attributes.position.array.length) >= currentMesh.geometry.attributes.position.array.length) {
+        _makeMesh();
+      }
+      const {geometry, material} = currentMesh;
+      const positionsAttribute = geometry.attributes.position;
+      const positions = positionsAttribute.array;
+      const normalsAttribute = geometry.attributes.normal;
+      const normals = normalsAttribute.array;
+      const colorsAttribute = geometry.attributes.color;
+      const colors = colorsAttribute.array;
+
+      new Float32Array(positions.buffer, positions.byteOffset + positionsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.position.array.length)
+        .set(o.geometry.attributes.position.array);
+      positionsAttribute.updateRange.offset = positionsIndex;
+      positionsAttribute.updateRange.count = o.geometry.attributes.position.array.length;
+      positionsIndex += o.geometry.attributes.position.array.length;
+
+      new Float32Array(normals.buffer, normals.byteOffset + normalsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.normal.array.length)
+        .set(o.geometry.attributes.normal.array);
+      normalsAttribute.updateRange.offset = normalsIndex;
+      normalsAttribute.updateRange.count = o.geometry.attributes.normal.array.length;
+      normalsIndex += o.geometry.attributes.normal.array.length;
+
+      colorsAttribute.updateRange.offset = colorsIndex;
+      colorsAttribute.updateRange.count = o.geometry.attributes.position.array.length;
+      if (o.geometry.groups.length > 0) {
+        for (let i = 0; i < o.geometry.groups.length; i++) {
+          const group = o.geometry.groups[i];
+          const {start, count, materialIndex} = group;
+          const material = materials[materialIndex];
+          for (let j = start; j < start + count; j++) {
+            colors[colorsIndex + j*3] = material.color.r;
+            colors[colorsIndex + j*3 + 1] = material.color.g;
+            colors[colorsIndex + j*3 + 2] = material.color.b;
+          }
+        }
+        colorsIndex += o.geometry.attributes.position.array.length;
+      } else {
+        const [material] = materials;
+        for (let i = 0; i < o.geometry.attributes.position.array.length; i += 3) {
+          colors[colorsIndex++] = material.color.r;
+          colors[colorsIndex++] = material.color.g;
+          colors[colorsIndex++] = material.color.b;
+        }
+      }
+
+      positionsAttribute.needsUpdate = true;
+      renderer.attributes.update(positionsAttribute, 34962);
+      normalsAttribute.needsUpdate = true;
+      renderer.attributes.update(normalsAttribute, 34962);
+      colorsAttribute.needsUpdate = true;
+      renderer.attributes.update(colorsAttribute, 34962);
+      geometry.setDrawRange(0, positionsIndex/3);
+    };
+
     const o = await p2;
     o.traverse(o => {
       if (o.isMesh) {
-        if (!currentMesh || (positionsIndex + o.geometry.attributes.position.array.length) >= currentMesh.geometry.attributes.position.array.length) {
-          _makeMesh();
-        }
-        const {geometry, material} = currentMesh;
-        const positionsAttribute = geometry.attributes.position;
-        const positions = positionsAttribute.array;
-        const normalsAttribute = geometry.attributes.normal;
-        const normals = normalsAttribute.array;
-        const colorsAttribute = geometry.attributes.color;
-        const colors = colorsAttribute.array;
-      
         // o.material = materials;
-        o.material = material;
+        // o.material = material;
         o.geometry
           .applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI)))
           .applyMatrix4(new THREE.Matrix4().makeTranslation(-rowSize/2 + x, 0, z));
-        new Float32Array(positions.buffer, positions.byteOffset + positionsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.position.array.length)
-          .set(o.geometry.attributes.position.array);
-        positionsAttribute.updateRange.offset = positionsIndex;
-        positionsAttribute.updateRange.count = o.geometry.attributes.position.array.length;
-        positionsIndex += o.geometry.attributes.position.array.length;
-
-        new Float32Array(normals.buffer, normals.byteOffset + normalsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.normal.array.length)
-          .set(o.geometry.attributes.normal.array);
-        normalsAttribute.updateRange.offset = normalsIndex;
-        normalsAttribute.updateRange.count = o.geometry.attributes.normal.array.length;
-        normalsIndex += o.geometry.attributes.normal.array.length;
-
-        colorsAttribute.updateRange.offset = colorsIndex;
-        colorsAttribute.updateRange.count = o.geometry.attributes.position.array.length;
-        if (o.geometry.groups.length > 0) {
-          for (let i = 0; i < o.geometry.groups.length; i++) {
-            const group = o.geometry.groups[i];
-            const {start, count, materialIndex} = group;
-            const material = materials[materialIndex];
-            for (let j = start; j < start + count; j++) {
-              colors[colorsIndex + j*3] = material.color.r;
-              colors[colorsIndex + j*3 + 1] = material.color.g;
-              colors[colorsIndex + j*3 + 2] = material.color.b;
-            }
-          }
-          colorsIndex += o.geometry.attributes.position.array.length;
-        } else {
-          const [material] = materials;
-          for (let i = 0; i < o.geometry.attributes.position.array.length; i += 3) {
-            colors[colorsIndex++] = material.color.r;
-            colors[colorsIndex++] = material.color.g;
-            colors[colorsIndex++] = material.color.b;
-          }
-        }
-
-        /* const ps = Array(3);
-        for (let i = 0; i < ps.length; i++) {
-          ps[i] = makePromise();
-        } */
-        /* const positionsBuffer = renderer.attributes.get(positionsAttribute);
-        if (!positionsBuffer.buffer) {
-          debugger;
-        } */
-        positionsAttribute.needsUpdate = true;
-        renderer.attributes.update(positionsAttribute, 34962);
-        /* positionsAttribute.onUploadCallback = () => {
-          ps[0].accept();
-          positionsAttribute.onUploadCallback = null;
-        }; */
-        // const normalsBuffer = renderer.attributes.get(normalsAttribute);
-        normalsAttribute.needsUpdate = true;
-        renderer.attributes.update(normalsAttribute, 34962);
-        /* normalsAttribute.onUploadCallback = () => {
-          ps[1].accept();
-          normalsAttribute.onUploadCallback = null;
-        }; */
-        // const colorsBuffer = renderer.attributes.get(colorsAttribute);
-        colorsAttribute.needsUpdate = true;
-        renderer.attributes.update(colorsAttribute, 34962);
-        /* colorsAttribute.onUploadCallback = () => {
-          ps[2].accept();
-          colorsAttribute.onUploadCallback = null;
-        }; */
-        geometry.setDrawRange(0, positionsIndex/3);
-        // await Promise.all(ps);
+        _mergeMesh(o);
       }
     });
 
@@ -287,9 +270,18 @@ const worker = _makeWasmWorker();
     // console.log('got materials', o, materials);
   }
 
-  const positions = currentMesh.geometry.attributes.position.array;
-  const normals = currentMesh.geometry.attributes.normal.array;
-  const colors = currentMesh.geometry.attributes.color.array;
+  const p3 = makePromise();
+  new GLTFLoader(manager).load('models/model.vrm', p3.accept, function onProgress() {}, p3.reject);
+  const o = await p3;
+  console.log('got model', o.scene);
+  container.add(o.scene);
+
+  container.remove(o.scene);
+
+  return;
+  const positions = new Float32Array(currentMesh.geometry.attributes.position.array.buffer, currentMesh.geometry.attributes.position.array.byteOffset, currentMesh.geometry.drawRange.count*3);
+  const normals = new Float32Array(currentMesh.geometry.attributes.normal.array.buffer, currentMesh.geometry.attributes.normal.array.byteOffset, currentMesh.geometry.drawRange.count*3);
+  const colors = new Float32Array(currentMesh.geometry.attributes.color.array.buffer, currentMesh.geometry.attributes.color.array.byteOffset, currentMesh.geometry.drawRange.count*3);
   const mins = [-2, 0, -2];
   const maxs = [2, 0, 2];
   const scales = [1, 1, 1];
@@ -309,23 +301,38 @@ const worker = _makeWasmWorker();
     container.remove(currentMesh);
     currentMesh = null;
 
-    for (let i = 0; i < res.positions.length; i++) {
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.BufferAttribute(res.positions[i], 3));
-      geometry.setAttribute('normal', new THREE.BufferAttribute(res.normals[i], 3));
-      geometry.setAttribute('color', new THREE.BufferAttribute(res.colors[i], 3));
+    let i = 0;
+    for (let x = mins[0]; x < maxs[0]; x++) {
+      for (let z = mins[2]; z < maxs[2]; z++) {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(res.positions[i], 3));
+        geometry.setAttribute('normal', new THREE.BufferAttribute(res.normals[i], 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(res.colors[i], 3));
 
-      // window.colorsAttribute = geometry;
+        // window.colorsAttribute = geometry;
 
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.frustumCulled = false;
-      container.add(mesh);
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.frustumCulled = false;
+        meshes.push(mesh);
+        container.add(mesh);
+
+        mesh.x = x;
+        mesh.z = z;
+
+        i++;
+      }
     }
   });
 })();
 
 function animate() {
   orbitControls.enabled && orbitControls.update();
+
+  const f = (Math.sin((Date.now()%1000)/1000*Math.PI*2)+1)/2*0.3;
+  for (let i = 0; i < meshes.length; i++) {
+    const mesh = meshes[i];
+    mesh.position.set(mesh.x*f, 0, mesh.z*f);
+  }
   
   /* if (currentSession) {
     for (let i = 0; i < 2; i++) {
