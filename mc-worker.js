@@ -55,13 +55,15 @@ const _handleMessage = data => {
     case 'chunk': {
       const allocator = new Allocator();
 
-      const {positions: positionsData, normals: normalsData, colors: colorsData, mins: minsData, maxs: maxsData, scales: scaleData, arrayBuffer} = data;
+      const {positions: positionsData, normals: normalsData, colors: colorsData, uvs: uvsData, mins: minsData, maxs: maxsData, scales: scaleData, arrayBuffer} = data;
       const positions = allocator.alloc(Float32Array, positionsData.length);
       positions.set(positionsData);
       const normals = allocator.alloc(Float32Array, normalsData.length);
       normals.set(normalsData);
       const colors = allocator.alloc(Float32Array, colorsData.length);
       colors.set(colorsData);
+      const uvs = allocator.alloc(Float32Array, uvsData.length);
+      uvs.set(uvsData);
 
       const mins = allocator.alloc(Float32Array, 3);
       mins[0] = minsData[0];
@@ -80,14 +82,17 @@ const _handleMessage = data => {
       const outPositions = allocator.alloc(Uint32Array, numSlots);
       const outNormals = allocator.alloc(Uint32Array, numSlots);
       const outColors = allocator.alloc(Uint32Array, numSlots);
+      const outUvs = allocator.alloc(Uint32Array, numSlots);
       for (let i = 0; i < numSlots; i++) {
         outPositions[i] = allocator.alloc(Float32Array, 500*1024).offset;
         outNormals[i] = allocator.alloc(Float32Array, 500*1024).offset;
         outColors[i] = allocator.alloc(Float32Array, 500*1024).offset;
+        outUvs[i] = allocator.alloc(Float32Array, 500*1024).offset;
       }
       const outNumPositions = allocator.alloc(Uint32Array, numSlots);
       const outNumNormals = allocator.alloc(Uint32Array, numSlots);
       const outNumColors = allocator.alloc(Uint32Array, numSlots);
+      const outNumUvs = allocator.alloc(Uint32Array, numSlots);
 
       self.Module._doChunk(
         positions.offset,
@@ -96,6 +101,8 @@ const _handleMessage = data => {
         normals.length,
         colors.offset,
         colors.length,
+        uvs.offset,
+        uvs.length,
         mins.offset,
         maxs.offset,
         scale.offset,
@@ -104,7 +111,9 @@ const _handleMessage = data => {
         outNormals.offset,
         outNumNormals.offset,
         outColors.offset,
-        outNumColors.offset
+        outNumColors.offset,
+        outUvs.offset,
+        outNumUvs.offset
       );
 
       const result = {};
@@ -113,6 +122,7 @@ const _handleMessage = data => {
       const outPs = Array(numSlots);
       const outNs = Array(numSlots);
       const outCs = Array(numSlots);
+      const outUs = Array(numSlots);
       for (let i = 0; i < numSlots; i++) {
         const numP = outNumPositions[i];
         const outP = new Float32Array(self.Module.HEAP8.buffer, self.Module.HEAP8.byteOffset + outPositions[i], numP);
@@ -132,6 +142,12 @@ const _handleMessage = data => {
         new Float32Array(arrayBuffer, index, numC).set(outC);
         outCs[i] = outC;
         index += Float32Array.BYTES_PER_ELEMENT * numC;
+
+        const numU = outNumUvs[i];
+        const outU = new Float32Array(self.Module.HEAP8.buffer, self.Module.HEAP8.byteOffset + outUvs[i], numU);
+        new Float32Array(arrayBuffer, index, numU).set(outU);
+        outUs[i] = outU;
+        index += Float32Array.BYTES_PER_ELEMENT * numU;
       }
 
       self.postMessage({
@@ -139,6 +155,7 @@ const _handleMessage = data => {
           positions: outPs,
           normals: outNs,
           colors: outCs,
+          uvs: outUs,
           arrayBuffer,
         },
       }, [arrayBuffer]);
