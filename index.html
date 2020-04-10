@@ -33,6 +33,7 @@ import {OrbitControls} from './OrbitControls.js';
 import {GLTFLoader} from './GLTFLoader.js';
 import {OBJLoader2} from './OBJLoader2.js';
 import {MTLLoader} from './MTLLoader.js';
+import atlaspack from './atlaspack.js';
 import modelFiles from './model-files.js';
 
 Error.stackTraceLimit = 300;
@@ -126,17 +127,17 @@ const meshes = [];
 (async () => {
   const NUM_POSITIONS = 2 * 1024 * 1024;
   let currentMesh = null;
+  let atlas = null;
   let positionsIndex = 0;
   let normalsIndex = 0;
   let colorsIndex = 0;
   let uvsIndex = 0;
 
-  const material = new THREE.MeshStandardMaterial({
+  const globalMaterial = new THREE.MeshStandardMaterial({
     color: 0xFFFFFF,
     vertexColors: true,
     transparent: true,
   });
-  const globalMaterial = material;
   const _makeMesh = () => {
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(NUM_POSITIONS*3);
@@ -163,11 +164,47 @@ const meshes = [];
 
     // window.colorsAttribute = geometry;
 
-    const mesh = new THREE.Mesh(geometry, material);
+    const mesh = new THREE.Mesh(geometry, globalMaterial);
     mesh.frustumCulled = false;
     container.add(mesh);
     currentMesh = mesh;
-    // return mesh;
+    atlas = atlaspack(1024, 1024);
+    atlas.images = [];
+    atlas.nodes = [];
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, 256, 256);
+    _pushAtlasImage(canvas);
+  };
+  const _pushAtlasImage = image => {
+    for (;;) {
+      const {width, height} = image;
+      const node = atlas.pack({width, height});
+      if (node) {
+        node.image = image;
+        atlas.images.push(image);
+        atlas.nodes.push(node);
+        break;
+      } else {
+        const oldAtlas = atlas;
+        atlas = atlaspack(atlas.rect.w*2, atlas.rect.w*2);
+        atlas.images = [];
+        atlas.nodes = [];
+        for (let i = 0; i < oldAtlas.images.length; i++) {
+          const image = oldAtlas.images[i];
+          const {width, height} = image;
+          const node = atlas.pack({width, height});
+          node.image = image;
+          atlas.images.push(image);
+          atlas.nodes.push(node);
+        }
+        continue;
+      }
+    }
   };
   const _mergeMesh = o => {
     if (!currentMesh || (positionsIndex + o.geometry.attributes.position.array.length) >= currentMesh.geometry.attributes.position.array.length) {
@@ -188,9 +225,13 @@ const meshes = [];
     if (o.geometry.index) {
       o.geometry = o.geometry.toNonIndexed();
     }
-    if (!globalMaterial.map && o.material.map) {
-      globalMaterial.map = new THREE.DataTexture(Uint8Array.from([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat, THREE.UnsignedByteType, THREE.UVMapping);
-      // globalMaterial.map = new THREE.Texture(o.material.map.image);
+    if (!Array.isArray(o.material) && o.material.map) {
+      /* if (!globalMaterial.map) {
+        globalMaterial.map = new THREE.DataTexture(Uint8Array.from([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat, THREE.UnsignedByteType, THREE.UVMapping);
+        // globalMaterial.map = new THREE.Texture(o.material.map.image);
+      } */
+
+      _pushAtlasImage(o.material.map.image);
     }
 
     new Float32Array(positions.buffer, positions.byteOffset + positionsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.position.array.length)
@@ -312,6 +353,20 @@ const meshes = [];
       _mergeMesh(o);
     }
   });
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 1024;
+  const scale = atlas.rect.w/canvas.width;
+  const ctx = canvas.getContext('2d');
+  for (let i = 0; i < atlas.nodes.length; i++) {
+    const node = atlas.nodes[i];
+    const {rect: {x, y, w, h}, image} = node;
+    ctx.drawImage(image, x/scale, y/scale, w/scale, h/scale);
+  }
+  globalMaterial.map.image = canvas;
+
+  console.log('got atlas', atlas);
 
   // container.remove(o.scene);
 
