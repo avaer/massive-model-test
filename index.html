@@ -178,14 +178,16 @@ const meshes = [];
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, 256, 256);
-    _pushAtlasImage(canvas);
+    _pushAtlasImage(canvas, 0, 0);
   };
-  const _pushAtlasImage = image => {
+  const _pushAtlasImage = (image, offset, count) => {
     for (;;) {
       const {width, height} = image;
       const node = atlas.pack({width, height});
       if (node) {
         node.image = image;
+        node.offset = offset;
+        node.count = count;
         atlas.images.push(image);
         atlas.nodes.push(node);
         break;
@@ -194,11 +196,14 @@ const meshes = [];
         atlas = atlaspack(atlas.rect.w*2, atlas.rect.w*2);
         atlas.images = [];
         atlas.nodes = [];
-        for (let i = 0; i < oldAtlas.images.length; i++) {
-          const image = oldAtlas.images[i];
+        for (let i = 0; i < oldAtlas.nodes.length; i++) {
+          const oldNode = oldAtlas.nodes[i];
+          const {image, offset, count} = oldNode;
           const {width, height} = image;
           const node = atlas.pack({width, height});
           node.image = image;
+          node.offset = offset;
+          node.count = count;
           atlas.images.push(image);
           atlas.nodes.push(node);
         }
@@ -225,13 +230,13 @@ const meshes = [];
     if (o.geometry.index) {
       o.geometry = o.geometry.toNonIndexed();
     }
-    if (!Array.isArray(o.material) && o.material.map) {
+    if (!Array.isArray(o.material) && o.material.map && o.geometry.attributes.uv) {
       /* if (!globalMaterial.map) {
         globalMaterial.map = new THREE.DataTexture(Uint8Array.from([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat, THREE.UnsignedByteType, THREE.UVMapping);
         // globalMaterial.map = new THREE.Texture(o.material.map.image);
       } */
 
-      _pushAtlasImage(o.material.map.image);
+      _pushAtlasImage(o.material.map.image, uvsIndex, o.geometry.attributes.uv.array.length);
     }
 
     new Float32Array(positions.buffer, positions.byteOffset + positionsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.position.array.length)
@@ -285,6 +290,8 @@ const meshes = [];
     renderer.attributes.update(normalsAttribute, 34962);
     colorsAttribute.needsUpdate = true;
     renderer.attributes.update(colorsAttribute, 34962);
+    uvsAttribute.needsUpdate = true;
+    renderer.attributes.update(uvsAttribute, 34962);
     geometry.setDrawRange(0, positionsIndex/3);
   };
 
@@ -363,12 +370,27 @@ const meshes = [];
   // ctx.scale(1, -1);
   for (let i = 0; i < atlas.nodes.length; i++) {
     const node = atlas.nodes[i];
-    const {rect: {x, y, w, h}, image} = node;
+    const {rect: {x, y, w, h}, image, offset, count} = node;
     ctx.drawImage(image, x/scale, y/scale, w/scale, h/scale);
+
+    for (let i = 0; i < count; i += 2) {
+      let u = currentMesh.geometry.attributes.uv.array[offset + i];
+      const oldU = u;
+      u = (x + u*w)/atlas.rect.w;
+      let v = currentMesh.geometry.attributes.uv.array[offset + i + 1];
+      v = (y + v*h)/atlas.rect.w;
+      currentMesh.geometry.attributes.uv.array[offset + i] = u;
+      currentMesh.geometry.attributes.uv.array[offset + i + 1] = v;
+
+      // console.log('setting', offset + i, oldU, u, x, w, atlas.rect.w);
+    }
   }
+  currentMesh.geometry.attributes.uv.updateRange.offset = 0;
+  currentMesh.geometry.attributes.uv.updateRange.count = -1;
+  currentMesh.geometry.attributes.uv.needsUpdate = true;
   globalMaterial.map = new THREE.Texture(canvas);
   globalMaterial.map.generateMipmaps = false;
-  globalMaterial.map.wrapS = globalMaterial.map.wrapT = THREE.ClampToEdgeWrapping;
+  globalMaterial.map.wrapS = globalMaterial.map.wrapT = THREE.ClampToEdgeWrapping; // THREE.RepeatWrapping;
   globalMaterial.map.minFilter = THREE.LinearFilter;
   globalMaterial.map.flipY = false;
   globalMaterial.map.needsUpdate = true;
@@ -376,7 +398,7 @@ const meshes = [];
   // document.body.appendChild(canvas);
 
   // console.log('got atlas', atlas);
-  window.geometry = currentMesh.geometry;
+  // window.geometry = currentMesh.geometry;
 
   // container.remove(o.scene);
 
