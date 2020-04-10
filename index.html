@@ -380,15 +380,10 @@ const meshes = [];
     for (let i = 0; i < count; i += 2) {
       let u = currentMesh.geometry.attributes.uv.array[offset + i];
       let v = currentMesh.geometry.attributes.uv.array[offset + i + 1];
-      // if (u < 0 || u > 1 || v < 0 || v > 1) {
-        // u = Math.min(Math.max(u, 0.1), 0.9);
-        // v = Math.min(Math.max(v, 0.1), 0.9);
-        // u = mod(u, 1);
-        // v = mod(v, 1);
-        // debugger;
-      // }
-      u = (x + u*w)/atlas.rect.w;
-      v = (y + v*h)/atlas.rect.h;
+      u = Math.min(Math.max(u, 0), 1);
+      v = Math.min(Math.max(v, 0), 1);
+      u = (x+scale + u*(w-scale*2))/atlas.rect.w;
+      v = (y+scale + v*(h-scale*2))/atlas.rect.h;
       currentMesh.geometry.attributes.uv.array[offset + i] = u;
       currentMesh.geometry.attributes.uv.array[offset + i + 1] = v;
 
