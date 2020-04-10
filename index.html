@@ -407,14 +407,14 @@ const meshes = [];
 
   // container.remove(o.scene);
 
-  return;
+  // return;
   const positions = new Float32Array(currentMesh.geometry.attributes.position.array.buffer, currentMesh.geometry.attributes.position.array.byteOffset, currentMesh.geometry.drawRange.count*3);
   const normals = new Float32Array(currentMesh.geometry.attributes.normal.array.buffer, currentMesh.geometry.attributes.normal.array.byteOffset, currentMesh.geometry.drawRange.count*3);
   const colors = new Float32Array(currentMesh.geometry.attributes.color.array.buffer, currentMesh.geometry.attributes.color.array.byteOffset, currentMesh.geometry.drawRange.count*3);
   const mins = [-2, 0, -2];
   const maxs = [2, 0, 2];
   const scales = [1, 1, 1];
-  const arrayBuffer = new ArrayBuffer(3 * 1024 * 1024);
+  const arrayBuffer = new ArrayBuffer(8 * 1024 * 1024);
   worker.request({
     method: 'chunk',
     positions,
@@ -440,7 +440,7 @@ const meshes = [];
 
         // window.colorsAttribute = geometry;
 
-        const mesh = new THREE.Mesh(geometry, material);
+        const mesh = new THREE.Mesh(geometry, globalMaterial);
         mesh.frustumCulled = false;
         meshes.push(mesh);
         container.add(mesh);
