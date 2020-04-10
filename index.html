@@ -35,6 +35,8 @@ import {OBJLoader2} from './OBJLoader2.js';
 import {MTLLoader} from './MTLLoader.js';
 import modelFiles from './model-files.js';
 
+Error.stackTraceLimit = 300;
+
 function makePromise() {
   let accept, reject;
   const p = new Promise((a, r) => {
@@ -127,11 +129,14 @@ const meshes = [];
   let positionsIndex = 0;
   let normalsIndex = 0;
   let colorsIndex = 0;
+  let uvsIndex = 0;
 
   const material = new THREE.MeshStandardMaterial({
     color: 0xFFFFFF,
     vertexColors: true,
+    transparent: true,
   });
+  const globalMaterial = material;
   const _makeMesh = () => {
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(NUM_POSITIONS*3);
@@ -146,6 +151,10 @@ const meshes = [];
     colorsIndex = 0;
     const colorsAttribute = new THREE.BufferAttribute(colors, 3);
     geometry.setAttribute('color', colorsAttribute);
+    const uvs = new Float32Array(NUM_POSITIONS*2);
+    uvsIndex = 0;
+    const uvsAttribute = new THREE.BufferAttribute(uvs, 3);
+    geometry.setAttribute('uv', uvsAttribute);
     /* const index = new Uint16Array(NUM_POSITIONS*3);
     let indexIndex = 0;
     const indexAttribute = new THREE.BufferAttribute(index, 1);
@@ -171,11 +180,17 @@ const meshes = [];
     const normals = normalsAttribute.array;
     const colorsAttribute = geometry.attributes.color;
     const colors = colorsAttribute.array;
+    const uvsAttribute = geometry.attributes.uv;
+    const uvs = uvsAttribute.array;
 
     o.updateMatrixWorld();
 
     if (o.geometry.index) {
       o.geometry = o.geometry.toNonIndexed();
+    }
+    if (!globalMaterial.map && o.material.map) {
+      globalMaterial.map = new THREE.DataTexture(Uint8Array.from([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat, THREE.UnsignedByteType, THREE.UVMapping);
+      // globalMaterial.map = new THREE.Texture(o.material.map.image);
     }
 
     new Float32Array(positions.buffer, positions.byteOffset + positionsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.position.array.length)
@@ -211,6 +226,16 @@ const meshes = [];
         colors[colorsIndex++] = material.color.g;
         colors[colorsIndex++] = material.color.b;
       }
+    }
+
+    if (o.geometry.attributes.uv) {
+      new Float32Array(uvs.buffer, uvs.byteOffset + uvsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.uv.array.length)
+        .set(o.geometry.attributes.uv.array);
+      uvsAttribute.updateRange.offset = uvsIndex;
+      uvsAttribute.updateRange.count = o.geometry.attributes.uv.array.length;
+      uvsIndex += o.geometry.attributes.uv.array.length;
+    } else {
+      uvsIndex += o.geometry.attributes.position.array.length/3*2;
     }
 
     positionsAttribute.needsUpdate = true;
