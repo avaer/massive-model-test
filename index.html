@@ -174,6 +174,10 @@ const meshes = [];
 
     o.updateMatrixWorld();
 
+    if (o.geometry.index) {
+      o.geometry = o.geometry.toNonIndexed();
+    }
+
     new Float32Array(positions.buffer, positions.byteOffset + positionsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.position.array.length)
       .set(o.geometry.attributes.position.array);
     positionsAttribute.updateRange.offset = positionsIndex;
