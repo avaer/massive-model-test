@@ -359,14 +359,24 @@ const meshes = [];
   canvas.height = 1024;
   const scale = atlas.rect.w/canvas.width;
   const ctx = canvas.getContext('2d');
+  // ctx.translate(0, canvas.height);
+  // ctx.scale(1, -1);
   for (let i = 0; i < atlas.nodes.length; i++) {
     const node = atlas.nodes[i];
     const {rect: {x, y, w, h}, image} = node;
     ctx.drawImage(image, x/scale, y/scale, w/scale, h/scale);
   }
-  globalMaterial.map.image = canvas;
+  globalMaterial.map = new THREE.Texture(canvas);
+  globalMaterial.map.generateMipmaps = false;
+  globalMaterial.map.wrapS = globalMaterial.map.wrapT = THREE.ClampToEdgeWrapping;
+  globalMaterial.map.minFilter = THREE.LinearFilter;
+  globalMaterial.map.flipY = false;
+  globalMaterial.map.needsUpdate = true;
+  globalMaterial.needsUpdate = true;
+  // document.body.appendChild(canvas);
 
-  console.log('got atlas', atlas);
+  // console.log('got atlas', atlas);
+  window.geometry = currentMesh.geometry;
 
   // container.remove(o.scene);
 
