@@ -160,6 +160,63 @@ const meshes = [];
     currentMesh = mesh;
     // return mesh;
   };
+  const _mergeMesh = o => {
+    if (!currentMesh || (positionsIndex + o.geometry.attributes.position.array.length) >= currentMesh.geometry.attributes.position.array.length) {
+      _makeMesh();
+    }
+    const {geometry, material} = currentMesh;
+    const positionsAttribute = geometry.attributes.position;
+    const positions = positionsAttribute.array;
+    const normalsAttribute = geometry.attributes.normal;
+    const normals = normalsAttribute.array;
+    const colorsAttribute = geometry.attributes.color;
+    const colors = colorsAttribute.array;
+
+    o.updateMatrixWorld();
+
+    new Float32Array(positions.buffer, positions.byteOffset + positionsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.position.array.length)
+      .set(o.geometry.attributes.position.array);
+    positionsAttribute.updateRange.offset = positionsIndex;
+    positionsAttribute.updateRange.count = o.geometry.attributes.position.array.length;
+    positionsIndex += o.geometry.attributes.position.array.length;
+
+    new Float32Array(normals.buffer, normals.byteOffset + normalsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.normal.array.length)
+      .set(o.geometry.attributes.normal.array);
+    normalsAttribute.updateRange.offset = normalsIndex;
+    normalsAttribute.updateRange.count = o.geometry.attributes.normal.array.length;
+    normalsIndex += o.geometry.attributes.normal.array.length;
+
+    colorsAttribute.updateRange.offset = colorsIndex;
+    colorsAttribute.updateRange.count = o.geometry.attributes.position.array.length;
+    if (o.geometry.groups.length > 0) {
+      for (let i = 0; i < o.geometry.groups.length; i++) {
+        const group = o.geometry.groups[i];
+        const {start, count, materialIndex} = group;
+        const material = o.material[materialIndex];
+        for (let j = start; j < start + count; j++) {
+          colors[colorsIndex + j*3] = material.color.r;
+          colors[colorsIndex + j*3 + 1] = material.color.g;
+          colors[colorsIndex + j*3 + 2] = material.color.b;
+        }
+      }
+      colorsIndex += o.geometry.attributes.position.array.length;
+    } else {
+      const material = Array.isArray(o.material) ? o.material[0] : o.material;
+      for (let i = 0; i < o.geometry.attributes.position.array.length; i += 3) {
+        colors[colorsIndex++] = material.color.r;
+        colors[colorsIndex++] = material.color.g;
+        colors[colorsIndex++] = material.color.b;
+      }
+    }
+
+    positionsAttribute.needsUpdate = true;
+    renderer.attributes.update(positionsAttribute, 34962);
+    normalsAttribute.needsUpdate = true;
+    renderer.attributes.update(normalsAttribute, 34962);
+    colorsAttribute.needsUpdate = true;
+    renderer.attributes.update(colorsAttribute, 34962);
+    geometry.setDrawRange(0, positionsIndex/3);
+  };
 
   const objs = modelFiles.filter(m => /\.obj/.test(m));
   // console.log('objs', objs);
@@ -198,62 +255,6 @@ const meshes = [];
     const x = i%rowSize;
     const z = -Math.floor(i/rowSize);
 
-    const _mergeMesh = o => {
-      if (!currentMesh || (positionsIndex + o.geometry.attributes.position.array.length) >= currentMesh.geometry.attributes.position.array.length) {
-        _makeMesh();
-      }
-      const {geometry, material} = currentMesh;
-      const positionsAttribute = geometry.attributes.position;
-      const positions = positionsAttribute.array;
-      const normalsAttribute = geometry.attributes.normal;
-      const normals = normalsAttribute.array;
-      const colorsAttribute = geometry.attributes.color;
-      const colors = colorsAttribute.array;
-
-      new Float32Array(positions.buffer, positions.byteOffset + positionsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.position.array.length)
-        .set(o.geometry.attributes.position.array);
-      positionsAttribute.updateRange.offset = positionsIndex;
-      positionsAttribute.updateRange.count = o.geometry.attributes.position.array.length;
-      positionsIndex += o.geometry.attributes.position.array.length;
-
-      new Float32Array(normals.buffer, normals.byteOffset + normalsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.normal.array.length)
-        .set(o.geometry.attributes.normal.array);
-      normalsAttribute.updateRange.offset = normalsIndex;
-      normalsAttribute.updateRange.count = o.geometry.attributes.normal.array.length;
-      normalsIndex += o.geometry.attributes.normal.array.length;
-
-      colorsAttribute.updateRange.offset = colorsIndex;
-      colorsAttribute.updateRange.count = o.geometry.attributes.position.array.length;
-      if (o.geometry.groups.length > 0) {
-        for (let i = 0; i < o.geometry.groups.length; i++) {
-          const group = o.geometry.groups[i];
-          const {start, count, materialIndex} = group;
-          const material = materials[materialIndex];
-          for (let j = start; j < start + count; j++) {
-            colors[colorsIndex + j*3] = material.color.r;
-            colors[colorsIndex + j*3 + 1] = material.color.g;
-            colors[colorsIndex + j*3 + 2] = material.color.b;
-          }
-        }
-        colorsIndex += o.geometry.attributes.position.array.length;
-      } else {
-        const [material] = materials;
-        for (let i = 0; i < o.geometry.attributes.position.array.length; i += 3) {
-          colors[colorsIndex++] = material.color.r;
-          colors[colorsIndex++] = material.color.g;
-          colors[colorsIndex++] = material.color.b;
-        }
-      }
-
-      positionsAttribute.needsUpdate = true;
-      renderer.attributes.update(positionsAttribute, 34962);
-      normalsAttribute.needsUpdate = true;
-      renderer.attributes.update(normalsAttribute, 34962);
-      colorsAttribute.needsUpdate = true;
-      renderer.attributes.update(colorsAttribute, 34962);
-      geometry.setDrawRange(0, positionsIndex/3);
-    };
-
     const o = await p2;
     o.traverse(o => {
       if (o.isMesh) {
@@ -262,6 +263,7 @@ const meshes = [];
         o.geometry
           .applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI)))
           .applyMatrix4(new THREE.Matrix4().makeTranslation(-rowSize/2 + x, 0, z));
+        o.material = materials;
         _mergeMesh(o);
       }
     });
@@ -274,9 +276,15 @@ const meshes = [];
   new GLTFLoader(manager).load('models/model.vrm', p3.accept, function onProgress() {}, p3.reject);
   const o = await p3;
   console.log('got model', o.scene);
-  container.add(o.scene);
+  // container.add(o.scene);
 
-  container.remove(o.scene);
+  o.scene.traverse(o => {
+    if (o.isMesh) {
+      _mergeMesh(o);
+    }
+  });
+
+  // container.remove(o.scene);
 
   return;
   const positions = new Float32Array(currentMesh.geometry.attributes.position.array.buffer, currentMesh.geometry.attributes.position.array.byteOffset, currentMesh.geometry.drawRange.count*3);
