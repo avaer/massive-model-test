@@ -162,7 +162,7 @@ const _handleMessage = data => {
     case 'decimate': {
       const allocator = new Allocator();
 
-      const {positions: positionsData, normals: normalsData, colors: colorsData, uvs: uvsData, factor, targetError, arrayBuffer} = data;
+      const {positions: positionsData, normals: normalsData, colors: colorsData, uvs: uvsData, minTris, aggressiveness, base, iterationOffset, arrayBuffer} = data;
       const positions = allocator.alloc(Float32Array, positionsData.length);
       positions.set(positionsData);
       const normals = allocator.alloc(Float32Array, normalsData.length);
@@ -193,8 +193,10 @@ const _handleMessage = data => {
         numColors.offset,
         uvs.offset,
         numUvs.offset,
-        factor,
-        targetError,
+        minTris,
+        aggressiveness,
+        base,
+        iterationOffset,
         indices.offset,
         numIndices.offset
       );

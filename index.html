@@ -414,8 +414,11 @@ const meshes = [];
     normals,
     colors,
     uvs,
-    factor: 0.1,
-    targetError: 0.5,
+    minTris: positions.length/9 * 0.8,
+    // factor: 0.15,
+    aggressiveness: 7,
+    base: 0.000000001,
+    iterationOffset: 3,
     arrayBuffer: arrayBuffer2,
   }, [arrayBuffer2]);
   console.log('got res 2', res2);
