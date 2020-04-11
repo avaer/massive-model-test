@@ -116,8 +116,6 @@ const _handleMessage = data => {
         outNumUvs.offset
       );
 
-      const result = {};
-
       let index = 0;
       const outPs = Array(numSlots);
       const outNs = Array(numSlots);
