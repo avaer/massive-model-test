@@ -124,7 +124,6 @@ const _handleMessage = data => {
       for (let i = 0; i < numSlots; i++) {
         const numP = outNumPositions[i];
         const outP = new Float32Array(self.Module.HEAP8.buffer, self.Module.HEAP8.byteOffset + outPositions[i], numP);
-        // console.log('got num', outPositions[i], outNumPositions[i], outP, numP);
         new Float32Array(arrayBuffer, index, numP).set(outP);
         outPs[i] = outP;
         index += Float32Array.BYTES_PER_ELEMENT * numP;
@@ -163,29 +162,73 @@ const _handleMessage = data => {
     case 'decimate': {
       const allocator = new Allocator();
 
-      const {positions: positionsData, indices: indicesData, factor, arrayBuffer} = data;
+      const {positions: positionsData, normals: normalsData, colors: colorsData, uvs: uvsData, factor, targetError, arrayBuffer} = data;
       const positions = allocator.alloc(Float32Array, positionsData.length);
       positions.set(positionsData);
+      const normals = allocator.alloc(Float32Array, normalsData.length);
+      normals.set(normalsData);
+      const colors = allocator.alloc(Float32Array, colorsData.length);
+      colors.set(colorsData);
+      const uvs = allocator.alloc(Float32Array, uvsData.length);
+      uvs.set(uvsData);
+      const indices = allocator.alloc(Uint32Array, 1024*1024);
 
-      const outIndices = allocator.alloc(Uint32Array, 500*1024);
-      const numOutIndices = allocator.alloc(Uint32Array, 1);
+      const numPositions = allocator.alloc(Uint32Array, 1);
+      numPositions[0] = positions.length;
+      const numNormals = allocator.alloc(Uint32Array, 1);
+      numNormals[0] = normals.length;
+      const numColors = allocator.alloc(Uint32Array, 1);
+      numColors[0] = colors.length;
+      const numUvs = allocator.alloc(Uint32Array, 1);
+      numUvs[0] = uvs.length;
+      const numIndices = allocator.alloc(Uint32Array, 1);
+      numIndices[0] = indices.length;
 
       self.Module._doDecimate(
         positions.offset,
-        positions.length,
+        numPositions.offset,
+        normals.offset,
+        numNormals.offset,
+        colors.offset,
+        numColors.offset,
+        uvs.offset,
+        numUvs.offset,
         factor,
-        outIndices.offset,
-        numOutIndices.offset
+        targetError,
+        indices.offset,
+        numIndices.offset
       );
 
+      console.log('num out indices', numIndices[0]);
+
       let index = 0;
-      const outIs = new Uint32Array(arrayBuffer, index, numOutIndices[0]);
-      outIs.set(new Uint32Array(outIndices.buffer, outIndices.byteOffset, numOutIndices[0]));
-      index += numOutIndices[0]*Uint32Array.BYTES_PER_ELEMENT;
+      const outP = new Float32Array(arrayBuffer, index, numPositions[0]);
+      outP.set(new Float32Array(positions.buffer, positions.byteOffset, numPositions[0]));
+      index += Float32Array.BYTES_PER_ELEMENT * positions.length;
+
+      const outN = new Float32Array(arrayBuffer, index, numNormals[0]);
+      outN.set(new Float32Array(normals.buffer, normals.byteOffset, numNormals[0]));
+      index += Float32Array.BYTES_PER_ELEMENT * normals.length;
+
+      const outC = new Float32Array(arrayBuffer, index, numColors[0]);
+      outC.set(new Float32Array(colors.buffer, colors.byteOffset, numColors[0]));
+      index += Float32Array.BYTES_PER_ELEMENT * colors.length;
+
+      const outU = new Float32Array(arrayBuffer, index, numUvs[0]);
+      outU.set(new Float32Array(uvs.buffer, uvs.byteOffset, numUvs[0]));
+      index += Float32Array.BYTES_PER_ELEMENT * uvs.length;
+
+      const outI = new Uint32Array(arrayBuffer, index, numIndices[0]);
+      outI.set(new Uint32Array(indices.buffer, indices.byteOffset, numIndices[0]));
+      index += Uint32Array.BYTES_PER_ELEMENT * indices.length;
 
       self.postMessage({
         result: {
-          indices: outIs,
+          positions: outP,
+          normals: outN,
+          colors: outC,
+          uvs: outU,
+          indices: outI,
           arrayBuffer,
         },
       }, [arrayBuffer]);

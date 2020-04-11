@@ -357,8 +357,6 @@ const meshes = [];
   new GLTFLoader(manager).load('models/model.vrm', p3.accept, function onProgress() {}, p3.reject);
   const o = await p3;
   console.log('got model', o.scene);
-  // container.add(o.scene);
-
   o.scene.traverse(o => {
     if (o.isMesh) {
       _mergeMesh(o);
@@ -370,8 +368,6 @@ const meshes = [];
   canvas.height = 1024;
   const scale = atlas.rect.w/canvas.width;
   const ctx = canvas.getContext('2d');
-  // ctx.translate(0, canvas.height);
-  // ctx.scale(1, -1);
   for (let i = 0; i < atlas.nodes.length; i++) {
     const node = atlas.nodes[i];
     const {rect: {x, y, w, h}, image, offset, count} = node;
@@ -386,8 +382,6 @@ const meshes = [];
       v = (y+scale + v*(h-scale*2))/atlas.rect.h;
       currentMesh.geometry.attributes.uv.array[offset + i] = u;
       currentMesh.geometry.attributes.uv.array[offset + i + 1] = v;
-
-      // console.log('setting', offset + i, oldU, u, x, w, atlas.rect.w);
     }
   }
   currentMesh.geometry.attributes.uv.updateRange.offset = 0;
@@ -408,15 +402,65 @@ const meshes = [];
   // container.remove(o.scene);
 
   // return;
-  const positions = new Float32Array(currentMesh.geometry.attributes.position.array.buffer, currentMesh.geometry.attributes.position.array.byteOffset, currentMesh.geometry.drawRange.count*3);
-  const normals = new Float32Array(currentMesh.geometry.attributes.normal.array.buffer, currentMesh.geometry.attributes.normal.array.byteOffset, currentMesh.geometry.drawRange.count*3);
-  const colors = new Float32Array(currentMesh.geometry.attributes.color.array.buffer, currentMesh.geometry.attributes.color.array.byteOffset, currentMesh.geometry.drawRange.count*3);
-  const uvs = new Float32Array(currentMesh.geometry.attributes.uv.array.buffer, currentMesh.geometry.attributes.uv.array.byteOffset, currentMesh.geometry.drawRange.count*2);
-  const mins = [-2, 0, -2];
+  let positions = new Float32Array(currentMesh.geometry.attributes.position.array.buffer, currentMesh.geometry.attributes.position.array.byteOffset, currentMesh.geometry.drawRange.count*3);
+  let normals = new Float32Array(currentMesh.geometry.attributes.normal.array.buffer, currentMesh.geometry.attributes.normal.array.byteOffset, currentMesh.geometry.drawRange.count*3);
+  let colors = new Float32Array(currentMesh.geometry.attributes.color.array.buffer, currentMesh.geometry.attributes.color.array.byteOffset, currentMesh.geometry.drawRange.count*3);
+  let uvs = new Float32Array(currentMesh.geometry.attributes.uv.array.buffer, currentMesh.geometry.attributes.uv.array.byteOffset, currentMesh.geometry.drawRange.count*2);
+  
+  const arrayBuffer2 = new ArrayBuffer(10 * 1024 * 1024);
+  const res2 = await worker.request({
+    method: 'decimate',
+    positions,
+    normals,
+    colors,
+    uvs,
+    factor: 0.1,
+    targetError: 0.5,
+    arrayBuffer: arrayBuffer2,
+  }, [arrayBuffer2]);
+  console.log('got res 2', res2);
+  /* const newPositions = new Float32Array(res2.indices.length*3);
+  const newNormals = new Float32Array(res2.indices.length*3);
+  const newColors = new Float32Array(res2.indices.length*3);
+  const newUvs = new Float32Array(res2.indices.length*2);
+  for (let i = 0; i < res2.indices.length; i++) {
+    const index = res2.indices[i];
+    new Float32Array(newPositions.buffer, newPositions.byteOffset + i*3*Float32Array.BYTES_PER_ELEMENT, 3)
+      .set(new Float32Array(res2.positions.buffer, res2.positions.byteOffset + index*3*Float32Array.BYTES_PER_ELEMENT, 3));
+     new Float32Array(newNormals.buffer, newNormals.byteOffset + i*3*Float32Array.BYTES_PER_ELEMENT, 3)
+      .set(new Float32Array(res2.normals.buffer, res2.normals.byteOffset + index*3*Float32Array.BYTES_PER_ELEMENT, 3));
+    new Float32Array(newColors.buffer, newColors.byteOffset + i*3*Float32Array.BYTES_PER_ELEMENT, 3)
+      .set(new Float32Array(res2.colors.buffer, res2.colors.byteOffset + index*3*Float32Array.BYTES_PER_ELEMENT, 3));
+    new Float32Array(newUvs.buffer, newUvs.byteOffset + i*2*Float32Array.BYTES_PER_ELEMENT, 2)
+      .set(new Float32Array(res2.uvs.buffer, res2.uvs.byteOffset + index*2*Float32Array.BYTES_PER_ELEMENT, 2));
+  } */
+  const newPositions = res2.positions;
+  const newNormals = res2.normals;
+  const newColors = res2.colors;
+  const newUvs = res2.uvs;
+  positions = newPositions;
+  normals = newNormals;
+  colors = newColors;
+  uvs = newUvs;
+  let {indices} = res2;
+  /* for (let i = 0; i < indices.length; i++) {
+    if (indices[i] > positions.length/3) {
+      indices[i] = positions.length/3-1;
+    }
+  } */
+
+  currentMesh.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  currentMesh.geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+  currentMesh.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  currentMesh.geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  currentMesh.geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  currentMesh.geometry.setDrawRange(0, Infinity);
+
+  /* const mins = [-2, 0, -2];
   const maxs = [2, 0, 2];
   const scales = [1, 1, 1];
-  const arrayBuffer = new ArrayBuffer(8 * 1024 * 1024);
-  worker.request({
+  const arrayBuffer = new ArrayBuffer(10 * 1024 * 1024);
+  const res = await worker.request({
     method: 'chunk',
     positions,
     normals,
@@ -426,71 +470,34 @@ const meshes = [];
     maxs,
     scales,
     arrayBuffer,
-  }, [arrayBuffer]).then(async res => {
-    console.log('got res 1', res);
+  }, [arrayBuffer]);
+  console.log('got res 1', res);
 
-    const firstIndex = res.positions.findIndex(positions => positions.length > 0);
-    const firstPositions = res.positions[firstIndex];
-    const firstNormals = res.normals[firstIndex];
-    const firstColors = res.colors[firstIndex];
-    const firstUvs = res.uvs[firstIndex];
+  container.remove(currentMesh);
+  currentMesh = null;
 
-    const arrayBuffer2 = new ArrayBuffer(1 * 1024 * 1024);
-    await worker.request({
-      method: 'decimate',
-      positions: firstPositions,
-      factor: 0.5,
-      arrayBuffer: arrayBuffer2,
-    }, [arrayBuffer2]).then(async res2 => {
-      const newPositions = new Float32Array(res2.indices.length*9);
-      const newNormals = new Float32Array(res2.indices.length*9);
-      const newColors = new Float32Array(res2.indices.length*9);
-      const newUvs = new Float32Array(res2.indices.length*6);
-      // console.log('got res 2', firstPositions, res2);
-      for (let i = 0; i < res2.indices.length; i++) {
-        const index = res2.indices[i];
-        // const index = i;
-        new Float32Array(newPositions.buffer, newPositions.byteOffset + i*9*Float32Array.BYTES_PER_ELEMENT, 9)
-          .set(new Float32Array(firstPositions.buffer, firstPositions.byteOffset + index*9*Float32Array.BYTES_PER_ELEMENT, 9));
-         new Float32Array(newNormals.buffer, newNormals.byteOffset + i*9*Float32Array.BYTES_PER_ELEMENT, 9)
-          .set(new Float32Array(firstNormals.buffer, firstNormals.byteOffset + index*9*Float32Array.BYTES_PER_ELEMENT, 9));
-        new Float32Array(newColors.buffer, newColors.byteOffset + i*9*Float32Array.BYTES_PER_ELEMENT, 9)
-          .set(new Float32Array(firstColors.buffer, firstColors.byteOffset + index*9*Float32Array.BYTES_PER_ELEMENT, 9));
-        new Float32Array(newUvs.buffer, newUvs.byteOffset + i*6*Float32Array.BYTES_PER_ELEMENT, 6)
-          .set(new Float32Array(firstUvs.buffer, firstUvs.byteOffset + index*6*Float32Array.BYTES_PER_ELEMENT, 6));
-      }
-      res.positions[firstIndex] = newPositions;
-      res.normals[firstIndex] = newNormals;
-      res.colors[firstIndex] = newColors;
-      res.uvs[firstIndex] = newUvs;
-    });
+  let i = 0;
+  for (let x = mins[0]; x < maxs[0]; x++) {
+    for (let z = mins[2]; z < maxs[2]; z++) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(res.positions[i], 3));
+      geometry.setAttribute('normal', new THREE.BufferAttribute(res.normals[i], 3));
+      geometry.setAttribute('color', new THREE.BufferAttribute(res.colors[i], 3));
+      geometry.setAttribute('uv', new THREE.BufferAttribute(res.uvs[i], 2));
 
-    container.remove(currentMesh);
-    currentMesh = null;
+      // window.colorsAttribute = geometry;
 
-    let i = 0;
-    for (let x = mins[0]; x < maxs[0]; x++) {
-      for (let z = mins[2]; z < maxs[2]; z++) {
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.BufferAttribute(res.positions[i], 3));
-        geometry.setAttribute('normal', new THREE.BufferAttribute(res.normals[i], 3));
-        geometry.setAttribute('color', new THREE.BufferAttribute(res.colors[i], 3));
-        geometry.setAttribute('uv', new THREE.BufferAttribute(res.uvs[i], 2));
+      const mesh = new THREE.Mesh(geometry, globalMaterial);
+      mesh.frustumCulled = false;
+      meshes.push(mesh);
+      container.add(mesh);
 
-        // window.colorsAttribute = geometry;
+      mesh.x = x;
+      mesh.z = z;
 
-        const mesh = new THREE.Mesh(geometry, globalMaterial);
-        mesh.frustumCulled = false;
-        meshes.push(mesh);
-        container.add(mesh);
-
-        mesh.x = x;
-        mesh.z = z;
-
-        i++;
-      }
+      i++;
     }
-  });
+  } */
 })();
 
 function animate() {
