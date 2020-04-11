@@ -426,8 +426,30 @@ const meshes = [];
     maxs,
     scales,
     arrayBuffer,
-  }, [arrayBuffer]).then(res => {
-    console.log('got res', res);
+  }, [arrayBuffer]).then(async res => {
+    console.log('got res 1', res);
+
+    const firstIndex = res.positions.findIndex(positions => positions.length > 0);
+    const firstPosition = res.positions[firstIndex];
+    const firstIndices = (() => {
+      const result = new Uint32Array(firstPosition.length/3);
+      for (let i = 0; i < result.length; i++) {
+        result[i] = i;
+      }
+      return result;
+    })();
+
+    const arrayBuffer2 = new ArrayBuffer(1 * 1024 * 1024);
+    await worker.request({
+      method: 'decimate',
+      positions: firstPosition,
+      indices: firstIndices,
+      factor: 0.9,
+      arrayBuffer: arrayBuffer2,
+    }, [arrayBuffer2]).then(async res2 => {
+      console.log('got res 2', /*firstPosition, firstIndices,*/ res2.indices);
+      // res.positions[firstIndex] = new Float32Array();
+    });
 
     container.remove(currentMesh);
     currentMesh = null;
