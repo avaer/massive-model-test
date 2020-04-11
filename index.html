@@ -430,25 +430,39 @@ const meshes = [];
     console.log('got res 1', res);
 
     const firstIndex = res.positions.findIndex(positions => positions.length > 0);
-    const firstPosition = res.positions[firstIndex];
-    const firstIndices = (() => {
-      const result = new Uint32Array(firstPosition.length/3);
-      for (let i = 0; i < result.length; i++) {
-        result[i] = i;
-      }
-      return result;
-    })();
+    const firstPositions = res.positions[firstIndex];
+    const firstNormals = res.normals[firstIndex];
+    const firstColors = res.colors[firstIndex];
+    const firstUvs = res.uvs[firstIndex];
 
     const arrayBuffer2 = new ArrayBuffer(1 * 1024 * 1024);
     await worker.request({
       method: 'decimate',
-      positions: firstPosition,
-      indices: firstIndices,
-      factor: 0.9,
+      positions: firstPositions,
+      factor: 0.5,
       arrayBuffer: arrayBuffer2,
     }, [arrayBuffer2]).then(async res2 => {
-      console.log('got res 2', /*firstPosition, firstIndices,*/ res2.indices);
-      // res.positions[firstIndex] = new Float32Array();
+      const newPositions = new Float32Array(res2.indices.length*9);
+      const newNormals = new Float32Array(res2.indices.length*9);
+      const newColors = new Float32Array(res2.indices.length*9);
+      const newUvs = new Float32Array(res2.indices.length*6);
+      // console.log('got res 2', firstPositions, res2);
+      for (let i = 0; i < res2.indices.length; i++) {
+        const index = res2.indices[i];
+        // const index = i;
+        new Float32Array(newPositions.buffer, newPositions.byteOffset + i*9*Float32Array.BYTES_PER_ELEMENT, 9)
+          .set(new Float32Array(firstPositions.buffer, firstPositions.byteOffset + index*9*Float32Array.BYTES_PER_ELEMENT, 9));
+         new Float32Array(newNormals.buffer, newNormals.byteOffset + i*9*Float32Array.BYTES_PER_ELEMENT, 9)
+          .set(new Float32Array(firstNormals.buffer, firstNormals.byteOffset + index*9*Float32Array.BYTES_PER_ELEMENT, 9));
+        new Float32Array(newColors.buffer, newColors.byteOffset + i*9*Float32Array.BYTES_PER_ELEMENT, 9)
+          .set(new Float32Array(firstColors.buffer, firstColors.byteOffset + index*9*Float32Array.BYTES_PER_ELEMENT, 9));
+        new Float32Array(newUvs.buffer, newUvs.byteOffset + i*6*Float32Array.BYTES_PER_ELEMENT, 6)
+          .set(new Float32Array(firstUvs.buffer, firstUvs.byteOffset + index*6*Float32Array.BYTES_PER_ELEMENT, 6));
+      }
+      res.positions[firstIndex] = newPositions;
+      res.normals[firstIndex] = newNormals;
+      res.colors[firstIndex] = newColors;
+      res.uvs[firstIndex] = newUvs;
     });
 
     container.remove(currentMesh);

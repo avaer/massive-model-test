@@ -166,8 +166,6 @@ const _handleMessage = data => {
       const {positions: positionsData, indices: indicesData, factor, arrayBuffer} = data;
       const positions = allocator.alloc(Float32Array, positionsData.length);
       positions.set(positionsData);
-      const indices = allocator.alloc(Uint32Array, indicesData.length);
-      indices.set(indicesData);
 
       const outIndices = allocator.alloc(Uint32Array, 500*1024);
       const numOutIndices = allocator.alloc(Uint32Array, 1);
@@ -175,14 +173,10 @@ const _handleMessage = data => {
       self.Module._doDecimate(
         positions.offset,
         positions.length,
-        indices.offset,
-        indices.length,
         factor,
         outIndices.offset,
         numOutIndices.offset
       );
-
-      console.log('num out indices', numOutIndices[0]);
 
       let index = 0;
       const outIs = new Uint32Array(arrayBuffer, index, numOutIndices[0]);
