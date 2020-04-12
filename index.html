@@ -231,6 +231,7 @@ const meshes = [];
 
     o.updateMatrixWorld();
 
+    o.geometry.applyMatrix4(o.matrixWorld);
     if (o.geometry.index) {
       o.geometry = o.geometry.toNonIndexed();
     }
