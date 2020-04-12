@@ -55,7 +55,7 @@ const _handleMessage = data => {
     case 'chunk': {
       const allocator = new Allocator();
 
-      const {positions: positionsData, normals: normalsData, colors: colorsData, uvs: uvsData, indices: indicesData, mins: minsData, maxs: maxsData, scales: scaleData, arrayBuffer} = data;
+      const {positions: positionsData, normals: normalsData, colors: colorsData, uvs: uvsData, ids: idsData, indices: indicesData, mins: minsData, maxs: maxsData, scales: scaleData, arrayBuffer} = data;
       const positions = allocator.alloc(Float32Array, positionsData.length);
       positions.set(positionsData);
       const normals = allocator.alloc(Float32Array, normalsData.length);
@@ -64,6 +64,8 @@ const _handleMessage = data => {
       colors.set(colorsData);
       const uvs = allocator.alloc(Float32Array, uvsData.length);
       uvs.set(uvsData);
+      const ids = allocator.alloc(Float32Array, idsData.length);
+      ids.set(idsData);
       const indices = allocator.alloc(Uint32Array, indicesData.length);
       indices.set(indicesData);
 
@@ -85,18 +87,21 @@ const _handleMessage = data => {
       const outNormals = allocator.alloc(Uint32Array, numSlots);
       const outColors = allocator.alloc(Uint32Array, numSlots);
       const outUvs = allocator.alloc(Uint32Array, numSlots);
+      const outIds = allocator.alloc(Uint32Array, numSlots);
       const outFaces = allocator.alloc(Uint32Array, numSlots);
       for (let i = 0; i < numSlots; i++) {
         outPositions[i] = allocator.alloc(Float32Array, 500*1024).offset;
         outNormals[i] = allocator.alloc(Float32Array, 500*1024).offset;
         outColors[i] = allocator.alloc(Float32Array, 500*1024).offset;
         outUvs[i] = allocator.alloc(Float32Array, 500*1024).offset;
+        outIds[i] = allocator.alloc(Uint32Array, 500*1024).offset;
         outFaces[i] = allocator.alloc(Uint32Array, 500*1024).offset;
       }
       const outNumPositions = allocator.alloc(Uint32Array, numSlots);
       const outNumNormals = allocator.alloc(Uint32Array, numSlots);
       const outNumColors = allocator.alloc(Uint32Array, numSlots);
       const outNumUvs = allocator.alloc(Uint32Array, numSlots);
+      const outNumIds = allocator.alloc(Uint32Array, numSlots);
       const outNumFaces = allocator.alloc(Uint32Array, numSlots);
 
       self.Module._doChunk(
@@ -108,6 +113,8 @@ const _handleMessage = data => {
         colors.length,
         uvs.offset,
         uvs.length,
+        ids.offset,
+        ids.length,
         indices.offset,
         indices.length,
         mins.offset,
@@ -121,6 +128,8 @@ const _handleMessage = data => {
         outNumColors.offset,
         outUvs.offset,
         outNumUvs.offset,
+        outIds.offset,
+        outNumIds.offset,
         outFaces.offset,
         outNumFaces.offset
       );
@@ -130,6 +139,7 @@ const _handleMessage = data => {
       const outNs = Array(numSlots);
       const outCs = Array(numSlots);
       const outUs = Array(numSlots);
+      const outXs = Array(numSlots);
       const outIs = Array(numSlots);
       for (let i = 0; i < numSlots; i++) {
         const numP = outNumPositions[i];
@@ -156,6 +166,12 @@ const _handleMessage = data => {
         outUs[i] = outU;
         index += Float32Array.BYTES_PER_ELEMENT * numU;
 
+        const numX = outNumIds[i];
+        const outX = new Float32Array(self.Module.HEAP8.buffer, self.Module.HEAP8.byteOffset + outUvs[i], numX);
+        new Float32Array(arrayBuffer, index, numX).set(outX);
+        outXs[i] = outX;
+        index += Float32Array.BYTES_PER_ELEMENT * numX;
+
         const numI = outNumFaces[i];
         const outI = new Uint32Array(self.Module.HEAP8.buffer, self.Module.HEAP8.byteOffset + outFaces[i], numI);
         new Uint32Array(arrayBuffer, index, numI).set(outI);
@@ -169,6 +185,7 @@ const _handleMessage = data => {
           normals: outNs,
           colors: outCs,
           uvs: outUs,
+          ids: outXs,
           indices: outIs,
           arrayBuffer,
         },

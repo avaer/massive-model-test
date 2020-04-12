@@ -462,8 +462,7 @@ const meshes = [];
   currentMesh.geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
   currentMesh.geometry.setIndex(new THREE.BufferAttribute(indices, 1));
   currentMesh.geometry.setDrawRange(0, Infinity);
-  // currentMesh.geometry.computeVertexNormals();
-  return;
+  // return;
 
   const mins = [-2, 0, -2];
   const maxs = [2, 0, 2];
@@ -475,6 +474,7 @@ const meshes = [];
     normals,
     colors,
     uvs,
+    ids: new Uint32Array(positions.length/3),
     indices,
     mins,
     maxs,
