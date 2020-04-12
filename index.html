@@ -171,7 +171,7 @@ const meshes = [];
     mesh.frustumCulled = false;
     container.add(mesh);
     currentMesh = mesh;
-    packer = new maxrects.MaxRectsPacker(16*1024, 16*1024, 0, {
+    packer = new maxrects.MaxRectsPacker(4*1024, 4*1024, 0, {
       smart: true,
       pot: true,
       square: false,
@@ -181,13 +181,13 @@ const meshes = [];
       border: 0,
     });
 
-    const canvas = document.createElement('canvas');
+    /* const canvas = document.createElement('canvas');
     canvas.width = 256;
     canvas.height = 256;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, 256, 256);
-    _pushAtlasImage(canvas, 0, 0);
+    _pushAtlasImage(canvas, 0, 0); */
   };
   const _pushAtlasImage = (image, offset, count) => {
     if (image.width > 512) {
@@ -237,13 +237,14 @@ const meshes = [];
     if (o.geometry.index) {
       o.geometry = o.geometry.toNonIndexed();
     }
-    if (!Array.isArray(o.material) && o.material.map && o.geometry.attributes.uv) {
+    const map = Array.isArray(o.material) ? o.material[0].map : o.material.map;
+    if (map && o.geometry.attributes.uv) {
       /* if (!globalMaterial.map) {
         globalMaterial.map = new THREE.DataTexture(Uint8Array.from([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat, THREE.UnsignedByteType, THREE.UVMapping);
         // globalMaterial.map = new THREE.Texture(o.material.map.image);
       } */
 
-      _pushAtlasImage(o.material.map.image, uvsIndex, o.geometry.attributes.uv.array.length);
+      _pushAtlasImage(map.image, uvsIndex, o.geometry.attributes.uv.array.length);
     }
 
     new Float32Array(positions.buffer, positions.byteOffset + positionsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.position.array.length)
@@ -281,7 +282,7 @@ const meshes = [];
       }
     }
 
-    if (o.geometry.attributes.uv) {
+    if (map && o.geometry.attributes.uv) {
       new Float32Array(uvs.buffer, uvs.byteOffset + uvsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.uv.array.length)
         .set(o.geometry.attributes.uv.array);
       uvsAttribute.updateRange.offset = uvsIndex;
@@ -351,21 +352,21 @@ const meshes = [];
     const o = await p;
 
     window.o = o;
-    /* const chair = o.scene.children[4];
-    // o.scene.children.splice(20, Infinity);
-    o.scene.children.length = 0;
-    o.scene.children.push(chair); */
-
+    // o.scene.children.splice(40, Infinity);
+    // const chair = o.scene.children.slice(21, 25);
+    // o.scene.children.length = 0;
+    // o.scene.children.push.apply(o.scene.children, chair);
     _mergeScene(o.scene);
+
     // container.add(o.scene);
   }
 
   const canvas = document.createElement('canvas');
-  canvas.width = 16*1024;
-  canvas.height = 16*1024;
+  canvas.width = packer.width;
+  canvas.height = packer.height;
   packer.repack(false);
   const {bins: [{rects}]} = packer;
-  console.log('got rects', rects);
+  // console.log('got rects', rects);
   const scale = packer.width/canvas.width;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#FFF';
@@ -375,14 +376,18 @@ const meshes = [];
     let {x, y, width: w, height: h, data: {image, offset, count}} = rect;
     x++;
     ctx.drawImage(image, x/scale, y/scale, w/scale, h/scale);
+    window.canvas = canvas;
+    window.ctx = ctx;
 
     for (let i = 0; i < count; i += 2) {
       let u = currentMesh.geometry.attributes.uv.array[offset + i];
       let v = currentMesh.geometry.attributes.uv.array[offset + i + 1];
-      u = Math.min(Math.max(u, 0), 1);
-      v = Math.min(Math.max(v, 0), 1);
-      u = (x+scale + u*(w-scale*2))/packer.width;
-      v = (y+scale + v*(h-scale*2))/packer.height;
+      if (u !== 0 || v !== 0) {
+        u = Math.min(Math.max(u, 0), 1);
+        v = Math.min(Math.max(v, 0), 1);
+        u = (x + u*w)/packer.width;
+        v = (y + v*h)/packer.height;
+      }
       currentMesh.geometry.attributes.uv.array[offset + i] = u;
       currentMesh.geometry.attributes.uv.array[offset + i + 1] = v;
     }
