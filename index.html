@@ -300,7 +300,6 @@ const meshes = [];
   };
 
   const objs = modelFiles.filter(m => /\.obj/.test(m));
-  // console.log('objs', objs);
   const manager = new THREE.LoadingManager();
   const rowSize = 10;
   const numItems = 10;
@@ -310,26 +309,15 @@ const meshes = [];
 
     const p = makePromise();
     new MTLLoader(manager)
-      // .setPath( '/' )
       .load(u.replace('.obj', '.mtl'), materials => {
         materials.preload();
         p.accept(materials);
-        // materials.preload();
       });
     let materials = await p;
     materials = Object.keys(materials.materials).map(k => materials.materials[k]);
-
-    /* new OBJLoader( manager )
-      .setMaterials( materials )
-      .setPath( 'models/obj/male02/' )
-      .load( 'male02.obj', function ( object ) {
-        object.position.y = - 95;
-        scene.add( object );
-      }, onProgress, onError ); */
     
     const p2 = makePromise();
     const loader = new OBJLoader2(manager);
-    // window.loader = loader;
     loader.parser.setMaterials( materials );
     loader.load(u, p2.accept, function onProgress() {}, p2.reject);
 
@@ -339,8 +327,6 @@ const meshes = [];
     const o = await p2;
     o.traverse(o => {
       if (o.isMesh) {
-        // o.material = materials;
-        // o.material = material;
         o.geometry
           .applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI)))
           .applyMatrix4(new THREE.Matrix4().makeTranslation(-rowSize/2 + x, 0, z));
@@ -348,9 +334,6 @@ const meshes = [];
         _mergeMesh(o);
       }
     });
-
-    // window.materials.push(materials);
-    // console.log('got materials', o, materials);
   }
 
   {
