@@ -424,7 +424,7 @@ const meshes = [];
     // document.body.appendChild(canvas);
   }
 
-  return;
+  // return;
 
   let positions = new Float32Array(currentMesh.geometry.attributes.position.array.buffer, currentMesh.geometry.attributes.position.array.byteOffset, currentMesh.geometry.drawRange.count*3);
   let normals = new Float32Array(currentMesh.geometry.attributes.normal.array.buffer, currentMesh.geometry.attributes.normal.array.byteOffset, currentMesh.geometry.drawRange.count*3);
@@ -438,8 +438,8 @@ const meshes = [];
     normals,
     colors,
     uvs,
-    // minTris: positions.length/9 * 0.8,
-    minTris: positions.length/9,
+    minTris: positions.length/9 * 0.2,
+    // minTris: positions.length/9,
     aggressiveness: 7,
     base: 0.000000001,
     iterationOffset: 3,
@@ -471,14 +471,14 @@ const meshes = [];
   uvs = newUvs;
   let {indices} = res2;
 
-  /* currentMesh.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  currentMesh.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   currentMesh.geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
   currentMesh.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   currentMesh.geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
   currentMesh.geometry.setIndex(new THREE.BufferAttribute(indices, 1));
   currentMesh.geometry.setDrawRange(0, Infinity);
-  currentMesh.geometry.computeVertexNormals();
-  return; */
+  // currentMesh.geometry.computeVertexNormals();
+  return;
 
   const mins = [-2, 0, -2];
   const maxs = [2, 0, 2];

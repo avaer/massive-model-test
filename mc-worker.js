@@ -218,8 +218,6 @@ const _handleMessage = data => {
         numIndices.offset
       );
 
-      console.log('num out indices', numIndices[0]);
-
       let index = 0;
       const outP = new Float32Array(arrayBuffer, index, numPositions[0]);
       outP.set(new Float32Array(positions.buffer, positions.byteOffset, numPositions[0]));
