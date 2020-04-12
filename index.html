@@ -363,12 +363,12 @@ const meshes = [];
     const o = await p;
     _mergeScene(o.scene);
   }
-  {
+  /* {
     const p = makePromise();
     new GLTFLoader(manager).load('models/scene.glb', p.accept, function onProgress() {}, p.reject);
     const o = await p;
 
-    window.o = o;
+    // window.o = o;
     // o.scene.children.splice(40, Infinity);
     // const chair = o.scene.children.slice(29, 30);
     // o.scene.children.length = 0;
@@ -376,7 +376,7 @@ const meshes = [];
     _mergeScene(o.scene);
 
     // container.add(o.scene);
-  }
+  } */
 
   const canvas = document.createElement('canvas');
   canvas.width = packer.width;
