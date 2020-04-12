@@ -171,7 +171,7 @@ const meshes = [];
     mesh.frustumCulled = false;
     container.add(mesh);
     currentMesh = mesh;
-    packer = new maxrects.MaxRectsPacker(4*1024, 4*1024, 0, {
+    packer = new maxrects.MaxRectsPacker(8*1024, 8*1024, 0, {
       smart: true,
       pot: true,
       square: false,
@@ -357,12 +357,12 @@ const meshes = [];
     });
   }
 
-  /* {
+  {
     const p = makePromise();
     new GLTFLoader(manager).load('models/model.vrm', p.accept, function onProgress() {}, p.reject);
     const o = await p;
     _mergeScene(o.scene);
-  } */
+  }
   {
     const p = makePromise();
     new GLTFLoader(manager).load('models/scene.glb', p.accept, function onProgress() {}, p.reject);
@@ -424,14 +424,14 @@ const meshes = [];
     // document.body.appendChild(canvas);
   }
 
-  // return;
+  return;
 
   let positions = new Float32Array(currentMesh.geometry.attributes.position.array.buffer, currentMesh.geometry.attributes.position.array.byteOffset, currentMesh.geometry.drawRange.count*3);
   let normals = new Float32Array(currentMesh.geometry.attributes.normal.array.buffer, currentMesh.geometry.attributes.normal.array.byteOffset, currentMesh.geometry.drawRange.count*3);
   let colors = new Float32Array(currentMesh.geometry.attributes.color.array.buffer, currentMesh.geometry.attributes.color.array.byteOffset, currentMesh.geometry.drawRange.count*3);
   let uvs = new Float32Array(currentMesh.geometry.attributes.uv.array.buffer, currentMesh.geometry.attributes.uv.array.byteOffset, currentMesh.geometry.drawRange.count*2);
   
-  const arrayBuffer2 = new ArrayBuffer(10 * 1024 * 1024);
+  const arrayBuffer2 = new ArrayBuffer(40 * 1024 * 1024);
   const res2 = await worker.request({
     method: 'decimate',
     positions,
