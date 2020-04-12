@@ -215,6 +215,14 @@ const meshes = [];
       }
     }
   };
+  const _mergeScene = o => {
+    o.updateMatrixWorld();
+    o.traverse(o => {
+      if (o.isMesh) {
+        _mergeMesh(o);
+      }
+    });
+  };
   const _mergeMesh = o => {
     if (!currentMesh || (positionsIndex + o.geometry.attributes.position.array.length) >= currentMesh.geometry.attributes.position.array.length) {
       _makeMesh();
@@ -228,8 +236,6 @@ const meshes = [];
     const colors = colorsAttribute.array;
     const uvsAttribute = geometry.attributes.uv;
     const uvs = uvsAttribute.array;
-
-    o.updateMatrixWorld();
 
     o.geometry.applyMatrix4(o.matrixWorld);
     if (o.geometry.index) {
@@ -335,27 +341,26 @@ const meshes = [];
         _mergeMesh(o);
       }
     });
-  }
+  } */
 
-  {
+  /* {
     const p = makePromise();
     new GLTFLoader(manager).load('models/model.vrm', p.accept, function onProgress() {}, p.reject);
     const o = await p;
-    o.scene.traverse(o => {
-      if (o.isMesh) {
-        _mergeMesh(o);
-      }
-    });
-  }
+    _mergeScene(o.scene);
+  } */
   {
     const p = makePromise();
     new GLTFLoader(manager).load('models/scene.glb', p.accept, function onProgress() {}, p.reject);
     const o = await p;
-    /* o.scene.traverse(o => {
-      if (o.isMesh) {
-        _mergeMesh(o);
-      }
-    }); */
+
+    window.o = o;
+    /* const chair = o.scene.children[4];
+    // o.scene.children.splice(20, Infinity);
+    o.scene.children.length = 0;
+    o.scene.children.push(chair); */
+
+    _mergeScene(o.scene);
     // container.add(o.scene);
   }
 
