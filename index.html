@@ -478,7 +478,7 @@ const meshes = [];
     scales,
     arrayBuffer,
   }, [arrayBuffer]);
-  console.log('got res 1', res);
+  // console.log('got res 1', res);
 
   container.remove(currentMesh);
   currentMesh = null;
@@ -491,11 +491,7 @@ const meshes = [];
       geometry.setAttribute('normal', new THREE.BufferAttribute(res.normals[i], 3));
       geometry.setAttribute('color', new THREE.BufferAttribute(res.colors[i], 3));
       geometry.setAttribute('uv', new THREE.BufferAttribute(res.uvs[i], 2));
-      geometry.setIndex(new THREE.BufferAttribute(res.indices[i], 1));
-
-      // geometry.computeVertexNormals();
-
-      // window.colorsAttribute = geometry;
+      // geometry.setIndex(new THREE.BufferAttribute(res.indices[i], 1));
 
       const mesh = new THREE.Mesh(geometry, globalMaterial);
       mesh.frustumCulled = false;
