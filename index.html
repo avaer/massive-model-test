@@ -190,6 +190,21 @@ const meshes = [];
     _pushAtlasImage(canvas, 0, 0);
   };
   const _pushAtlasImage = (image, offset, count) => {
+    if (image.width > 512) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 512*image.height/image.width;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      image = canvas;
+    } else if (image.height > 512) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 512*image.height/image.width;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      image = canvas;
+    }
     packer.add(image.width, image.height, {
       image,
       offset,
