@@ -445,22 +445,7 @@ const meshes = [];
     iterationOffset: 3,
     arrayBuffer: arrayBuffer2,
   }, [arrayBuffer2]);
-  // console.log('got res 2', res2);
-  /* const newPositions = new Float32Array(res2.indices.length*3);
-  const newNormals = new Float32Array(res2.indices.length*3);
-  const newColors = new Float32Array(res2.indices.length*3);
-  const newUvs = new Float32Array(res2.indices.length*2);
-  for (let i = 0; i < res2.indices.length; i++) {
-    const index = res2.indices[i];
-    new Float32Array(newPositions.buffer, newPositions.byteOffset + i*3*Float32Array.BYTES_PER_ELEMENT, 3)
-      .set(new Float32Array(res2.positions.buffer, res2.positions.byteOffset + index*3*Float32Array.BYTES_PER_ELEMENT, 3));
-     new Float32Array(newNormals.buffer, newNormals.byteOffset + i*3*Float32Array.BYTES_PER_ELEMENT, 3)
-      .set(new Float32Array(res2.normals.buffer, res2.normals.byteOffset + index*3*Float32Array.BYTES_PER_ELEMENT, 3));
-    new Float32Array(newColors.buffer, newColors.byteOffset + i*3*Float32Array.BYTES_PER_ELEMENT, 3)
-      .set(new Float32Array(res2.colors.buffer, res2.colors.byteOffset + index*3*Float32Array.BYTES_PER_ELEMENT, 3));
-    new Float32Array(newUvs.buffer, newUvs.byteOffset + i*2*Float32Array.BYTES_PER_ELEMENT, 2)
-      .set(new Float32Array(res2.uvs.buffer, res2.uvs.byteOffset + index*2*Float32Array.BYTES_PER_ELEMENT, 2));
-  } */
+
   const newPositions = res2.positions;
   const newNormals = res2.normals;
   const newColors = res2.colors;
