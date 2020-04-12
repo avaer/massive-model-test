@@ -406,12 +406,6 @@ const meshes = [];
   globalMaterial.map.flipY = false;
   globalMaterial.map.needsUpdate = true;
   globalMaterial.needsUpdate = true;
-  // document.body.appendChild(canvas);
-
-  // console.log('got atlas', atlas);
-  // window.geometry = currentMesh.geometry;
-
-  // container.remove(o.scene);
 
   // return;
   let positions = new Float32Array(currentMesh.geometry.attributes.position.array.buffer, currentMesh.geometry.attributes.position.array.byteOffset, currentMesh.geometry.drawRange.count*3);
