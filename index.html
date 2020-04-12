@@ -427,7 +427,7 @@ const meshes = [];
     iterationOffset: 3,
     arrayBuffer: arrayBuffer2,
   }, [arrayBuffer2]);
-  console.log('got res 2', res2);
+  // console.log('got res 2', res2);
   /* const newPositions = new Float32Array(res2.indices.length*3);
   const newNormals = new Float32Array(res2.indices.length*3);
   const newColors = new Float32Array(res2.indices.length*3);
@@ -452,20 +452,17 @@ const meshes = [];
   colors = newColors;
   uvs = newUvs;
   let {indices} = res2;
-  /* for (let i = 0; i < indices.length; i++) {
-    if (indices[i] > positions.length/3) {
-      indices[i] = positions.length/3-1;
-    }
-  } */
 
-  currentMesh.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  /* currentMesh.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   currentMesh.geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
   currentMesh.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   currentMesh.geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
   currentMesh.geometry.setIndex(new THREE.BufferAttribute(indices, 1));
   currentMesh.geometry.setDrawRange(0, Infinity);
+  currentMesh.geometry.computeVertexNormals();
+  return; */
 
-  /* const mins = [-2, 0, -2];
+  const mins = [-2, 0, -2];
   const maxs = [2, 0, 2];
   const scales = [1, 1, 1];
   const arrayBuffer = new ArrayBuffer(10 * 1024 * 1024);
@@ -475,6 +472,7 @@ const meshes = [];
     normals,
     colors,
     uvs,
+    indices,
     mins,
     maxs,
     scales,
@@ -493,6 +491,9 @@ const meshes = [];
       geometry.setAttribute('normal', new THREE.BufferAttribute(res.normals[i], 3));
       geometry.setAttribute('color', new THREE.BufferAttribute(res.colors[i], 3));
       geometry.setAttribute('uv', new THREE.BufferAttribute(res.uvs[i], 2));
+      geometry.setIndex(new THREE.BufferAttribute(res.indices[i], 1));
+
+      // geometry.computeVertexNormals();
 
       // window.colorsAttribute = geometry;
 
@@ -506,7 +507,7 @@ const meshes = [];
 
       i++;
     }
-  } */
+  }
 })();
 
 function animate() {
