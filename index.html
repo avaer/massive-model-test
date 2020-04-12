@@ -33,10 +33,9 @@ import {OrbitControls} from './OrbitControls.js';
 import {GLTFLoader} from './GLTFLoader.js';
 import {OBJLoader2} from './OBJLoader2.js';
 import {MTLLoader} from './MTLLoader.js';
-import atlaspack from './atlaspack.js';
+// import atlaspack from './atlaspack.js';
+import maxrects from './maxrects-packer.min.js';
 import modelFiles from './model-files.js';
-
-Error.stackTraceLimit = 300;
 
 function makePromise() {
   let accept, reject;
@@ -130,7 +129,7 @@ const meshes = [];
 (async () => {
   const NUM_POSITIONS = 2 * 1024 * 1024;
   let currentMesh = null;
-  let atlas = null;
+  let packer = null;
   let positionsIndex = 0;
   let normalsIndex = 0;
   let colorsIndex = 0;
@@ -172,9 +171,15 @@ const meshes = [];
     mesh.frustumCulled = false;
     container.add(mesh);
     currentMesh = mesh;
-    atlas = atlaspack(1024, 1024);
-    atlas.images = [];
-    atlas.nodes = [];
+    packer = new maxrects.MaxRectsPacker(16*1024, 16*1024, 0, {
+      smart: true,
+      pot: true,
+      square: false,
+      allowRotation: false,
+      tag: false,
+      // border: 10,
+      border: 0,
+    });
 
     const canvas = document.createElement('canvas');
     canvas.width = 256;
@@ -185,35 +190,11 @@ const meshes = [];
     _pushAtlasImage(canvas, 0, 0);
   };
   const _pushAtlasImage = (image, offset, count) => {
-    for (;;) {
-      const {width, height} = image;
-      const node = atlas.pack({width, height});
-      if (node) {
-        node.image = image;
-        node.offset = offset;
-        node.count = count;
-        atlas.images.push(image);
-        atlas.nodes.push(node);
-        break;
-      } else {
-        const oldAtlas = atlas;
-        atlas = atlaspack(atlas.rect.w*2, atlas.rect.w*2);
-        atlas.images = [];
-        atlas.nodes = [];
-        for (let i = 0; i < oldAtlas.nodes.length; i++) {
-          const oldNode = oldAtlas.nodes[i];
-          const {image, offset, count} = oldNode;
-          const {width, height} = image;
-          const node = atlas.pack({width, height});
-          node.image = image;
-          node.offset = offset;
-          node.count = count;
-          atlas.images.push(image);
-          atlas.nodes.push(node);
-        }
-        continue;
-      }
-    }
+    packer.add(image.width, image.height, {
+      image,
+      offset,
+      count,
+    });
   };
   const _mergeScene = o => {
     o.updateMatrixWorld();
@@ -365,13 +346,19 @@ const meshes = [];
   }
 
   const canvas = document.createElement('canvas');
-  canvas.width = 1024;
-  canvas.height = 1024;
-  const scale = atlas.rect.w/canvas.width;
+  canvas.width = 16*1024;
+  canvas.height = 16*1024;
+  packer.repack(false);
+  const {bins: [{rects}]} = packer;
+  console.log('got rects', rects);
+  const scale = packer.width/canvas.width;
   const ctx = canvas.getContext('2d');
-  for (let i = 0; i < atlas.nodes.length; i++) {
-    const node = atlas.nodes[i];
-    const {rect: {x, y, w, h}, image, offset, count} = node;
+  ctx.fillStyle = '#FFF';
+  ctx.fillRect(0, 0, 1, 1);
+  for (let i = 0; i < rects.length; i++) {
+    const rect = rects[i];
+    let {x, y, width: w, height: h, data: {image, offset, count}} = rect;
+    x++;
     ctx.drawImage(image, x/scale, y/scale, w/scale, h/scale);
 
     for (let i = 0; i < count; i += 2) {
@@ -379,8 +366,8 @@ const meshes = [];
       let v = currentMesh.geometry.attributes.uv.array[offset + i + 1];
       u = Math.min(Math.max(u, 0), 1);
       v = Math.min(Math.max(v, 0), 1);
-      u = (x+scale + u*(w-scale*2))/atlas.rect.w;
-      v = (y+scale + v*(h-scale*2))/atlas.rect.h;
+      u = (x+scale + u*(w-scale*2))/packer.width;
+      v = (y+scale + v*(h-scale*2))/packer.height;
       currentMesh.geometry.attributes.uv.array[offset + i] = u;
       currentMesh.geometry.attributes.uv.array[offset + i + 1] = v;
     }
