@@ -353,15 +353,27 @@ const meshes = [];
     // console.log('got materials', o, materials);
   }
 
-  const p3 = makePromise();
-  new GLTFLoader(manager).load('models/model.vrm', p3.accept, function onProgress() {}, p3.reject);
-  const o = await p3;
-  console.log('got model', o.scene);
-  o.scene.traverse(o => {
-    if (o.isMesh) {
-      _mergeMesh(o);
-    }
-  });
+  {
+    const p = makePromise();
+    new GLTFLoader(manager).load('models/model.vrm', p.accept, function onProgress() {}, p.reject);
+    const o = await p;
+    o.scene.traverse(o => {
+      if (o.isMesh) {
+        _mergeMesh(o);
+      }
+    });
+  }
+  {
+    const p = makePromise();
+    new GLTFLoader(manager).load('models/scene.glb', p.accept, function onProgress() {}, p.reject);
+    const o = await p;
+    /* o.scene.traverse(o => {
+      if (o.isMesh) {
+        _mergeMesh(o);
+      }
+    }); */
+    // container.add(o.scene);
+  }
 
   const canvas = document.createElement('canvas');
   canvas.width = 1024;
