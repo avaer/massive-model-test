@@ -168,12 +168,20 @@ let meshes = [];
     container.add(mesh);
   }
 
-  const _serializeMesh = mesh => {
+  const _serializeMesh = async mesh => {
     const positions = mesh.geometry.attributes.position.array;
     const normals = mesh.geometry.attributes.position.array;
     const colors = mesh.geometry.attributes.position.array;
     const uvs = mesh.geometry.attributes.position.array;
     const ids = mesh.geometry.attributes.id.array;
+    const texData = await new Promise((accept, reject) => {
+      mesh.material.map.image.toBlob(b => {
+        const rs = new FileReader();
+        rs.onload = () => accept(new Uint8Array(rs.result));
+        rs.onerror = reject;
+        rs.readAsArrayBuffer(b);
+      });
+    });
 
     const arrayBuffer = new ArrayBuffer(
       Uint32Array.BYTES_PER_ELEMENT +
@@ -185,7 +193,9 @@ let meshes = [];
       Uint32Array.BYTES_PER_ELEMENT +
       uvs.length*Float32Array.BYTES_PER_ELEMENT +
       Uint32Array.BYTES_PER_ELEMENT +
-      ids.length*Uint32Array.BYTES_PER_ELEMENT
+      ids.length*Uint32Array.BYTES_PER_ELEMENT +
+      Uint32Array.BYTES_PER_ELEMENT +
+      texData.length
     );
 
     let index = 0;
@@ -203,11 +213,13 @@ let meshes = [];
     _set(uvs);
     _set(Uint32Array.from([ids.length]));
     _set(ids);
+    _set(Uint32Array.from([texData.length]));
+    _set(texData);
 
     return arrayBuffer;
   };
   {
-    const body = _serializeMesh(meshes[0]);
+    const body = await _serializeMesh(meshes[0]);
     console.log('set body', body);
     const res = await fetch('/d/mesh01.bin', {
       method: 'PUT',
