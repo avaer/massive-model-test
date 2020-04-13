@@ -114,7 +114,8 @@ class Mesher {
   }
   addMesh(o) {
     this.meshes.push(o);
-    this.aabb.expandByObject(o);
+    o.aabb = new THREE.Box3().setFromObject(o);
+    this.aabb.union(o.aabb);
   }
   mergeMesh(o) {
     const {geometry, material} = this.currentMesh;
@@ -216,6 +217,52 @@ class Mesher {
   }
   async getChunks(factor) {
     const {currentMesh, packer, globalMaterial} = this;
+
+    const extents = [];
+    let seenIndices = {};
+    const _getMeshesInChunk = (x, z) => {
+      const chunkBox = new THREE.Box3(
+        new THREE.Vector3(x, 0, z),
+        new THREE.Vector3(x+1, 0, z+1)
+      );
+      return this.meshes.filter(m => m.aabb.intersectsBox(chunkBox));
+    };
+    for (let x = Math.floor(this.aabb.min.x); x < Math.ceil(this.aabb.max.x); x++) {
+      for (let z = Math.floor(this.aabb.min.z); z < Math.ceil(this.aabb.max.z); z++) {
+        const k = x + ':' + z;
+        if (!seenIndices[k]) {
+          const queue = _getMeshesInChunk(x, z);
+          const closure = [];
+          const closureChunks = [{x, z}];
+          while (queue.length > 0) {
+            const mesh = queue.pop();
+            closure.push(mesh);
+            for (let x = Math.floor(mesh.aabb.min.x); x < Math.ceil(mesh.aabb.max.x); x++) {
+              for (let z = Math.floor(mesh.aabb.min.z); z < Math.ceil(mesh.aabb.max.z); z++) {
+                const k = x + ':' + z;
+                if (!seenIndices[k]) {
+                  const meshes = _getMeshesInChunk(x, z);
+                  if (meshes.length > 0) {
+                    queue.push.apply(queue, meshes);
+                    closureChunks.push({x, z});
+                  }
+                  seenIndices[k] = true;
+                }
+              }
+            }
+          }
+          if (closure.length > 0) {
+            extents.push({
+              meshes: closure,
+              chunks: closureChunks,
+            });
+          }
+
+          seenIndices[k] = true;
+        }
+      }
+    }
+    console.log('got extents', extents);
 
     for (let i = 0; i < this.meshes.length; i++) {
       const mesh = this.meshes[i];
