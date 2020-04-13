@@ -218,7 +218,42 @@ class Mesher {
   async getChunks(factor) {
     const {currentMesh, packer, globalMaterial} = this;
 
-    const extents = [];
+    let chunkWeights = {};
+    const _getMeshesInChunk = (x, z) => {
+      x += 0.5;
+      z += 0.5;
+      return this.meshes.filter(m => {
+        const minX = Math.floor(m.aabb.min.x);
+        const maxX = Math.ceil(m.aabb.max.x);
+        const minZ = Math.floor(m.aabb.min.z);
+        const maxZ = Math.ceil(m.aabb.max.z);
+        return minX <= x && maxX >= x && minZ <= z && maxZ >= z;
+      });
+    };
+    for (let x = Math.floor(this.aabb.min.x); x < Math.ceil(this.aabb.max.x); x++) {
+      for (let z = Math.floor(this.aabb.min.z); z < Math.ceil(this.aabb.max.z); z++) {
+        const k = x + ':' + z;
+        if (chunkWeights[k] === undefined) {
+          chunkWeights[k] = _getMeshesInChunk(x, z).length;
+        }
+      }
+    }
+    const meshBudgets = this.meshes.map(m => {
+      let budget = 0;
+      const minX = Math.floor(m.aabb.min.x);
+      const maxX = Math.ceil(m.aabb.max.x);
+      const minZ = Math.floor(m.aabb.min.z);
+      const maxZ = Math.ceil(m.aabb.max.z);
+      for (let x = minX; x < maxX; x++) {
+        for (let z = minZ; z < maxZ; z++) {
+          const k = x + ':' + z;
+          budget += 1/chunkWeights[k];
+        }
+      }
+      return budget;
+    });
+    console.log('got mesh budgets', meshBudgets);
+    /* const extents = [];
     let seenIndices = {};
     const _getMeshesInChunk = (x, z) => {
       const chunkBox = new THREE.Box3(
@@ -261,8 +296,8 @@ class Mesher {
           seenIndices[k] = true;
         }
       }
-    }
-    console.log('got extents', extents);
+    } */
+    // console.log('got extents', extents);
 
     for (let i = 0; i < this.meshes.length; i++) {
       const mesh = this.meshes[i];
