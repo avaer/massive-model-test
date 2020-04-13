@@ -39,7 +39,20 @@ class Mesher {
     this.uvsIndex = 0;
     this.idsIndex = 0;
     this.currentId = 0;
+    this.globalMaterial = new THREE.MeshStandardMaterial({
+      color: 0xFFFFFF,
+      vertexColors: true,
+      transparent: true,
+      alphaTest: 0.5,
+    });
+    this.currentMesh = null;
+    this.packer = null;
+    this.meshes = [];
+    this.aabb = new THREE.Box3();
 
+    this.reset();
+  }
+  reset() {
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(NUM_POSITIONS*3);
     const positionsAttribute = new THREE.BufferAttribute(positions, 3);
@@ -55,13 +68,6 @@ class Mesher {
     geometry.setAttribute('uv', uvsAttribute);
     geometry.ids = new Uint32Array(NUM_POSITIONS);
     geometry.setDrawRange(0, 0);
-
-    this.globalMaterial = new THREE.MeshStandardMaterial({
-      color: 0xFFFFFF,
-      vertexColors: true,
-      transparent: true,
-      alphaTest: 0.5,
-    });
 
     const mesh = new THREE.Mesh(geometry, this.globalMaterial);
     mesh.frustumCulled = false;
@@ -107,9 +113,10 @@ class Mesher {
     });
   }
   addMesh(o) {
-    /* if (!currentMesh || (positionsIndex + o.geometry.attributes.position.array.length) >= currentMesh.geometry.attributes.position.array.length) {
-      _makeMesh();
-    } */
+    this.meshes.push(o);
+    this.aabb.expandByObject(o);
+  }
+  mergeMesh(o) {
     const {geometry, material} = this.currentMesh;
     const positionsAttribute = geometry.attributes.position;
     const positions = positionsAttribute.array;
@@ -128,11 +135,6 @@ class Mesher {
     const mat = Array.isArray(o.material) ? o.material[0] : o.material;
     const {map} = mat;
     if (map && map.image && o.geometry.attributes.uv) {
-      /* if (!globalMaterial.map) {
-        globalMaterial.map = new THREE.DataTexture(Uint8Array.from([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat, THREE.UnsignedByteType, THREE.UVMapping);
-        // globalMaterial.map = new THREE.Texture(o.material.map.image);
-      } */
-
       this.pushAtlasImage(map.image, this.uvsIndex, o.geometry.attributes.uv.array.length);
     }
 
@@ -214,6 +216,12 @@ class Mesher {
   }
   async getChunks() {
     const {currentMesh, packer, globalMaterial} = this;
+
+    for (let i = 0; i < this.meshes.length; i++) {
+      const mesh = this.meshes[i];
+      this.mergeMesh(mesh);
+    }
+    
     const canvas = document.createElement('canvas');
     canvas.width = packer.width;
     canvas.height = packer.height;
