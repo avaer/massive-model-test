@@ -239,7 +239,7 @@ const meshes = [];
     }
     const mat = Array.isArray(o.material) ? o.material[0] : o.material;
     const {map} = mat;
-    if (map && o.geometry.attributes.uv) {
+    if (map && map.image && o.geometry.attributes.uv) {
       /* if (!globalMaterial.map) {
         globalMaterial.map = new THREE.DataTexture(Uint8Array.from([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat, THREE.UnsignedByteType, THREE.UVMapping);
         // globalMaterial.map = new THREE.Texture(o.material.map.image);
@@ -299,7 +299,7 @@ const meshes = [];
       }
     }
 
-    if (map && o.geometry.attributes.uv) {
+    if (map && map.image && o.geometry.attributes.uv) {
       new Float32Array(uvs.buffer, uvs.byteOffset + uvsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.uv.array.length)
         .set(o.geometry.attributes.uv.array);
       uvsAttribute.updateRange.offset = uvsIndex;
