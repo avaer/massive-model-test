@@ -115,14 +115,6 @@ class Mesher {
       count,
     });
   }
-  addScene(o) {
-    o.updateMatrixWorld();
-    o.traverse(o => {
-      if (o.isMesh) {
-        this.addMesh(o);
-      }
-    });
-  }
   addMesh(o) {
     this.meshes.push(o);
     o.aabb = new THREE.Box3().setFromObject(o);
@@ -223,6 +215,14 @@ class Mesher {
     this.renderer.attributes.update(uvsAttribute, 34962);
     geometry.setDrawRange(0, this.positionsIndex/3);
   }
+  mergeMeshGeometryScene(o) {
+    o.updateMatrixWorld();
+    o.traverse(o => {
+      if (o.isMesh) {
+        this.mergeMeshGeometry(o);
+      }
+    });
+  }
   mergeMeshMaterial(o) {
     if (o.geometry.index) {
       o.geometry = o.geometry.toNonIndexed();
@@ -233,6 +233,14 @@ class Mesher {
     if (map && map.image && o.geometry.attributes.uv) {
       this.pushAtlasImage(map.image, this.uvsIndex, o.geometry.attributes.uv.array.length);
     }
+  }
+  mergeMeshMaterialScene(o) {
+    o.updateMatrixWorld();
+    o.traverse(o => {
+      if (o.isMesh) {
+        this.mergeMeshMaterial(o);
+      }
+    });
   }
   async decimateMesh(factor) {
     const {currentMesh} = this;
@@ -449,13 +457,13 @@ class Mesher {
       console.log('decimate', i, this.meshes.length);
       const mesh = this.meshes[i];
       this.reset();
-      this.mergeMeshGeometry(mesh);
+      this.mergeMeshGeometryScene(mesh);
       const decimatedMesh = await this.decimateMesh(0.5);
       decimatedMeshes.push(decimatedMesh);
     }
     this.meshes = decimatedMeshes;
 
-    console.log('got decimated meshes', decimatedMeshes);
+    // console.log('got decimated meshes', decimatedMeshes);
 
     const chunkMeshes = [];
     for (let x = Math.floor(this.aabb.min.x); x < Math.ceil(this.aabb.max.x); x++) {
@@ -466,8 +474,8 @@ class Mesher {
           this.reset();
           for (let i = 0; i < meshes.length; i++) {
             const mesh = meshes[i];
-            this.mergeMeshMaterial(mesh);
-            this.mergeMeshGeometry(mesh);
+            this.mergeMeshMaterialScene(mesh);
+            this.mergeMeshGeometryScene(mesh);
           }
           this.repackTexture();
           const chunkMesh = await this.chunkMesh(x, z);
