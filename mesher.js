@@ -3,6 +3,7 @@ import maxrects from './maxrects-packer.min.js';
 
 const NUM_POSITIONS = 2 * 1024 * 1024;
 const TEXTURE_SIZE = 4*1024;
+const CHUNK_SIZE = 16;
 
 const _makeWasmWorker = () => {
   let cbs = [];
@@ -69,7 +70,9 @@ class Mesher {
     const uvs = new Float32Array(NUM_POSITIONS*2);
     const uvsAttribute = new THREE.BufferAttribute(uvs, 2);
     geometry.setAttribute('uv', uvsAttribute);
-    geometry.ids = new Uint32Array(NUM_POSITIONS);
+    const ids = new Uint32Array(NUM_POSITIONS);
+    const idsAttribute = new THREE.BufferAttribute(ids, 1);
+    geometry.setAttribute('id', idsAttribute);
     geometry.setDrawRange(0, 0);
 
     this.globalMaterial = new THREE.MeshStandardMaterial({
@@ -92,35 +95,49 @@ class Mesher {
       // border: 10,
       border: 0,
     });
+    this.packer.images = [];
   }
-  pushAtlasImage(image, offset, count) {
-    if (image.width > 512) {
-      const canvas = document.createElement('canvas');
-      canvas.width = 512;
-      canvas.height = 512*image.height/image.width;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-      image = canvas;
-    } else if (image.height > 512) {
-      const canvas = document.createElement('canvas');
-      canvas.width = 512*image.height/image.width;
-      canvas.height = 512;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-      image = canvas;
+  pushAtlasImage(image, currentId) {
+    let spec = this.packer.images.find(o => o.image === image);
+    const hadSpec = !!spec;
+    if (!spec) {
+      spec = {
+        image,
+        currentIds: [],
+      };
+      this.packer.images.push(spec);
     }
-    this.packer.add(image.width, image.height, {
-      image,
-      offset,
-      count,
-    });
+    spec.currentIds.push(currentId);
+
+    if (!hadSpec) {
+      if (image.width > 512) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512*image.height/image.width;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+        image = canvas;
+      } else if (image.height > 512) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512*image.height/image.width;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+        image = canvas;
+      }
+      this.packer.add(image.width, image.height, spec);
+    }
   }
   addMesh(o) {
     this.meshes.push(o);
     o.aabb = new THREE.Box3().setFromObject(o);
+    o.aabb.min.x = Math.floor(o.aabb.min.x/CHUNK_SIZE)*CHUNK_SIZE;
+    o.aabb.max.x = Math.ceil(o.aabb.max.x/CHUNK_SIZE)*CHUNK_SIZE;
+    o.aabb.min.z = Math.floor(o.aabb.min.z/CHUNK_SIZE)*CHUNK_SIZE;
+    o.aabb.max.z = Math.ceil(o.aabb.max.z/CHUNK_SIZE)*CHUNK_SIZE;
     this.aabb.union(o.aabb);
   }
-  mergeMeshGeometry(o) {
+  mergeMeshGeometry(o, mergeMaterial, forceUvs) {
     const {geometry, material} = this.currentMesh;
     const positionsAttribute = geometry.attributes.position;
     const positions = positionsAttribute.array;
@@ -130,7 +147,8 @@ class Mesher {
     const colors = colorsAttribute.array;
     const uvsAttribute = geometry.attributes.uv;
     const uvs = uvsAttribute.array;
-    const {ids} = geometry;
+    const idsAttribute = geometry.attributes.id;
+    const ids = idsAttribute.array;
 
     o.geometry.applyMatrix4(o.matrixWorld);
     if (o.geometry.index) {
@@ -190,7 +208,12 @@ class Mesher {
       }
     }
 
-    if (map && map.image && o.geometry.attributes.uv) {
+    if (((map && map.image) || forceUvs) && o.geometry.attributes.uv) { // XXX won't be picked up on the second pass
+      if (mergeMaterial) {
+        this.pushAtlasImage(map.image, this.currentId);
+      }
+
+    // if (o.geometry.attributes.uv) {
       new Float32Array(uvs.buffer, uvs.byteOffset + this.uvsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.uv.array.length)
         .set(o.geometry.attributes.uv.array);
       uvsAttribute.updateRange.offset = this.uvsIndex;
@@ -200,10 +223,16 @@ class Mesher {
       this.uvsIndex += o.geometry.attributes.position.array.length/3*2;
     }
 
-    new Float32Array(ids.buffer, ids.byteOffset + this.idsIndex*Uint32Array.BYTES_PER_ELEMENT, o.geometry.attributes.position.array.length/3)
-      .fill(this.currentId);
-    this.idsIndex += o.geometry.attributes.position.array.length/3*Uint32Array.BYTES_PER_ELEMENT;
-    this.currentId++;
+    if (o.geometry.attributes.id) {
+      new Uint32Array(ids.buffer, ids.byteOffset + this.idsIndex*Uint32Array.BYTES_PER_ELEMENT, o.geometry.attributes.id.array.length)
+        .set(o.geometry.attributes.id.array);
+      this.idsIndex += o.geometry.attributes.id.array.length;
+    } else {
+      new Uint32Array(ids.buffer, ids.byteOffset + this.idsIndex*Uint32Array.BYTES_PER_ELEMENT, o.geometry.attributes.position.array.length/3)
+        .fill(this.currentId);
+      this.idsIndex += o.geometry.attributes.position.array.length/3;
+      this.currentId++;
+    }
 
     positionsAttribute.needsUpdate = true;
     this.renderer.attributes.update(positionsAttribute, 34962);
@@ -215,30 +244,11 @@ class Mesher {
     this.renderer.attributes.update(uvsAttribute, 34962);
     geometry.setDrawRange(0, this.positionsIndex/3);
   }
-  mergeMeshGeometryScene(o) {
+  mergeMeshGeometryScene(o, mergeMaterial, forceUvs) {
     o.updateMatrixWorld();
     o.traverse(o => {
       if (o.isMesh) {
-        this.mergeMeshGeometry(o);
-      }
-    });
-  }
-  mergeMeshMaterial(o) {
-    if (o.geometry.index) {
-      o.geometry = o.geometry.toNonIndexed();
-    }
-
-    const mat = Array.isArray(o.material) ? o.material[0] : o.material;
-    const {map} = mat;
-    if (map && map.image && o.geometry.attributes.uv) {
-      this.pushAtlasImage(map.image, this.uvsIndex, o.geometry.attributes.uv.array.length);
-    }
-  }
-  mergeMeshMaterialScene(o) {
-    o.updateMatrixWorld();
-    o.traverse(o => {
-      if (o.isMesh) {
-        this.mergeMeshMaterial(o);
+        this.mergeMeshGeometry(o, mergeMaterial, forceUvs);
       }
     });
   }
@@ -249,7 +259,7 @@ class Mesher {
     const normals = new Float32Array(currentMesh.geometry.attributes.normal.array.buffer, currentMesh.geometry.attributes.normal.array.byteOffset, currentMesh.geometry.drawRange.count*3);
     const colors = new Float32Array(currentMesh.geometry.attributes.color.array.buffer, currentMesh.geometry.attributes.color.array.byteOffset, currentMesh.geometry.drawRange.count*3);
     const uvs = new Float32Array(currentMesh.geometry.attributes.uv.array.buffer, currentMesh.geometry.attributes.uv.array.byteOffset, currentMesh.geometry.drawRange.count*2);
-    const ids = new Uint32Array(currentMesh.geometry.ids.buffer, currentMesh.geometry.ids.byteOffset, currentMesh.geometry.drawRange.count);
+    const ids = new Uint32Array(currentMesh.geometry.attributes.id.array.buffer, currentMesh.geometry.attributes.id.array.byteOffset, currentMesh.geometry.drawRange.count);
 
     const arrayBuffer = new ArrayBuffer(2 * 1024 * 1024);
     const res = await worker.request({
@@ -271,10 +281,20 @@ class Mesher {
     currentMesh.geometry.setAttribute('normal', new THREE.BufferAttribute(res.normals, 3));
     currentMesh.geometry.setAttribute('color', new THREE.BufferAttribute(res.colors, 3));
     currentMesh.geometry.setAttribute('uv', new THREE.BufferAttribute(res.uvs, 2));
+    currentMesh.geometry.setAttribute('id', new THREE.BufferAttribute(res.ids, 1));
     currentMesh.geometry.setIndex(new THREE.BufferAttribute(res.indices, 1));
     currentMesh.geometry.setDrawRange(0, Infinity);
-    currentMesh.geometry.ids = ids;
+
     currentMesh.aabb = new THREE.Box3().setFromObject(currentMesh);
+    currentMesh.aabb.min.x = Math.floor(currentMesh.aabb.min.x/CHUNK_SIZE)*CHUNK_SIZE;
+    currentMesh.aabb.max.x = Math.ceil(currentMesh.aabb.max.x/CHUNK_SIZE)*CHUNK_SIZE;
+    currentMesh.aabb.min.z = Math.floor(currentMesh.aabb.min.z/CHUNK_SIZE)*CHUNK_SIZE;
+    currentMesh.aabb.max.z = Math.ceil(currentMesh.aabb.max.z/CHUNK_SIZE)*CHUNK_SIZE;
+    currentMesh.packer = this.packer;
+
+    currentMesh.x = 0;
+    currentMesh.z = 0;
+
     return currentMesh;
   }
   repackTexture() {
@@ -286,28 +306,51 @@ class Mesher {
     packer.repack(false);
     if (packer.bins.length > 0) {
       const {bins: [{rects}]} = packer;
-      // console.log('got rects', rects);
+
       const scale = packer.width/canvas.width;
       const ctx = canvas.getContext('2d');
       ctx.fillStyle = '#FFF';
       ctx.fillRect(0, 0, 1, 1);
+
+      const rectById = [];
       for (let i = 0; i < rects.length; i++) {
         const rect = rects[i];
-        let {x, y, width: w, height: h, data: {image, offset, count}} = rect;
+        let {x, y, width: w, height: h, data: {image, currentIds}} = rect;
         x++;
+
         ctx.drawImage(image, x/scale, y/scale, w/scale, h/scale);
 
-        for (let i = 0; i < count; i += 2) {
-          let u = currentMesh.geometry.attributes.uv.array[offset + i];
-          let v = currentMesh.geometry.attributes.uv.array[offset + i + 1];
-          if (u !== 0 || v !== 0) {
-            u = Math.min(Math.max(u, 0), 1);
-            v = Math.min(Math.max(v, 0), 1);
-            u = (x + u*w)/packer.width;
-            v = (y + v*h)/packer.height;
+        for (let i = 0; i < currentIds.length; i++) {
+          const currentId = currentIds[i];
+          rectById[currentId] = rect;
+        }
+      }
+
+      const uvs = currentMesh.geometry.attributes.uv.array;
+      const ids = currentMesh.geometry.attributes.id.array;
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
+        const rect = rectById[id];
+
+        if (rect) {
+          let {x, y, width: w, height: h} = rect;
+          x++;
+
+          while (ids[i] === id) {
+            let u = uvs[i*2];
+            let v = uvs[i*2+1];
+            if (u !== 0 || v !== 0) {
+              u = Math.min(Math.max(u, 0), 1);
+              v = Math.min(Math.max(v, 0), 1);
+              u = (x + u*w)/packer.width;
+              v = (y + v*h)/packer.height;
+            }
+            uvs[i*2] = u;
+            uvs[i*2+1] = v;
+
+            i++;
           }
-          currentMesh.geometry.attributes.uv.array[offset + i] = u;
-          currentMesh.geometry.attributes.uv.array[offset + i + 1] = v;
+          i--;
         }
       }
       currentMesh.geometry.attributes.uv.updateRange.offset = 0;
@@ -329,7 +372,7 @@ class Mesher {
     const normals = currentMesh.geometry.attributes.normal.array;
     const colors = currentMesh.geometry.attributes.color.array;
     const uvs = currentMesh.geometry.attributes.uv.array;
-    const ids = currentMesh.geometry.ids;
+    const ids = currentMesh.geometry.attributes.id.array;
     // const indices = currentMesh.geometry.index.array;
     const indices = new Uint32Array(positions.length/3);
     for (let i = 0; i < indices.length; i++) {
@@ -337,7 +380,7 @@ class Mesher {
     }
 
     const mins = [x, 0, z];
-    const maxs = [x+1, 0, z+1];
+    const maxs = [x+CHUNK_SIZE, 0, z+CHUNK_SIZE];
     const arrayBuffer = new ArrayBuffer(10 * 1024 * 1024);
     const res = await worker.request({
       method: 'chunkOne',
@@ -357,14 +400,15 @@ class Mesher {
     geometry.setAttribute('normal', new THREE.BufferAttribute(res.normals, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(res.colors, 3));
     geometry.setAttribute('uv', new THREE.BufferAttribute(res.uvs, 2));
+    geometry.setAttribute('id', new THREE.BufferAttribute(res.ids, 1));
     // geometry.setIndex(new THREE.BufferAttribute(res.indices[i], 1));
     // geometry.computeVertexNormals();
 
     const mesh = new THREE.Mesh(geometry, globalMaterial);
     mesh.frustumCulled = false;
 
-    mesh.x = x;
-    mesh.z = z;
+    mesh.x = x/CHUNK_SIZE;
+    mesh.z = z/CHUNK_SIZE;
 
     return mesh;
   }
@@ -373,18 +417,12 @@ class Mesher {
 
     let chunkWeights = {};
     const _getMeshesInChunk = (x, z) => {
-      x += 0.5;
-      z += 0.5;
-      return this.meshes.filter(m => {
-        const minX = Math.floor(m.aabb.min.x);
-        const maxX = Math.ceil(m.aabb.max.x);
-        const minZ = Math.floor(m.aabb.min.z);
-        const maxZ = Math.ceil(m.aabb.max.z);
-        return minX <= x && maxX >= x && minZ <= z && maxZ >= z;
-      });
+      x += CHUNK_SIZE/2;
+      z += CHUNK_SIZE/2;
+      return this.meshes.filter(m => m.aabb.min.x <= x && m.aabb.max.x >= x && m.aabb.min.z <= z && m.aabb.max.z >= z);
     };
-    for (let x = Math.floor(this.aabb.min.x); x < Math.ceil(this.aabb.max.x); x++) {
-      for (let z = Math.floor(this.aabb.min.z); z < Math.ceil(this.aabb.max.z); z++) {
+    for (let x = this.aabb.min.x; x < this.aabb.max.x; x += CHUNK_SIZE) {
+      for (let z = this.aabb.min.z; z < this.aabb.max.z; z += CHUNK_SIZE) {
         const k = x + ':' + z;
         if (chunkWeights[k] === undefined) {
           chunkWeights[k] = _getMeshesInChunk(x, z).length;
@@ -393,12 +431,8 @@ class Mesher {
     }
     const meshBudgets = this.meshes.map(m => {
       let budget = 0;
-      const minX = Math.floor(m.aabb.min.x);
-      const maxX = Math.ceil(m.aabb.max.x);
-      const minZ = Math.floor(m.aabb.min.z);
-      const maxZ = Math.ceil(m.aabb.max.z);
-      for (let x = minX; x < maxX; x++) {
-        for (let z = minZ; z < maxZ; z++) {
+      for (let x = m.aabb.min.x; x < m.aabb.max.x; x += CHUNK_SIZE) {
+        for (let z = m.aabb.min.z; z < m.aabb.max.z; z += CHUNK_SIZE) {
           const k = x + ':' + z;
           budget += 1/chunkWeights[k];
         }
@@ -454,28 +488,38 @@ class Mesher {
 
     const decimatedMeshes = [];
     for (let i = 0; i < this.meshes.length; i++) {
-      console.log('decimate', i, this.meshes.length);
       const mesh = this.meshes[i];
       this.reset();
-      this.mergeMeshGeometryScene(mesh);
+      this.mergeMeshGeometryScene(mesh, true, false);
       const decimatedMesh = await this.decimateMesh(0.5);
       decimatedMeshes.push(decimatedMesh);
     }
     this.meshes = decimatedMeshes;
 
-    // console.log('got decimated meshes', decimatedMeshes);
+    console.log('got decimated meshes', decimatedMeshes);
+    // debugger;
+    // return this.meshes;
 
     const chunkMeshes = [];
-    for (let x = Math.floor(this.aabb.min.x); x < Math.ceil(this.aabb.max.x); x++) {
-      for (let z = Math.floor(this.aabb.min.z); z < Math.ceil(this.aabb.max.z); z++) {
+    for (let x = this.aabb.min.x; x < this.aabb.max.x; x += CHUNK_SIZE) {
+      for (let z = this.aabb.min.z; z < this.aabb.max.z; z += CHUNK_SIZE) {
         console.log('chunk', x, z);
         const meshes = _getMeshesInChunk(x, z);
         if (meshes.length > 0) {
           this.reset();
+
           for (let i = 0; i < meshes.length; i++) {
             const mesh = meshes[i];
-            this.mergeMeshMaterialScene(mesh);
-            this.mergeMeshGeometryScene(mesh);
+
+            this.mergeMeshGeometryScene(mesh, false, true);
+
+            const {packer} = mesh;
+            for (let j = 0; j < packer.images.length; j++) {
+              const {image, currentIds} = packer.images[j];
+              for (let k = 0; k < currentIds.length; k++) {
+                this.pushAtlasImage(image, currentIds[k]);
+              }
+            }
           }
           this.repackTexture();
           const chunkMesh = await this.chunkMesh(x, z);
@@ -486,6 +530,7 @@ class Mesher {
     this.meshes = chunkMeshes;
 
     console.log('got chunk meshes', chunkMeshes);
+    // document.body.appendChild(chunkMeshes[0].material.map.image);
 
     return this.meshes;
   }
