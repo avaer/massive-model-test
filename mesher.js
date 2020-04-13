@@ -368,11 +368,11 @@ class Mesher {
   async chunkMesh(x, z) {
     const {currentMesh, globalMaterial} = this;
 
-    const positions = currentMesh.geometry.attributes.position.array;
-    const normals = currentMesh.geometry.attributes.normal.array;
-    const colors = currentMesh.geometry.attributes.color.array;
-    const uvs = currentMesh.geometry.attributes.uv.array;
-    const ids = currentMesh.geometry.attributes.id.array;
+    const positions = new Float32Array(currentMesh.geometry.attributes.position.array.buffer, currentMesh.geometry.attributes.position.array.byteOffset, currentMesh.geometry.drawRange.count*3);
+    const normals = new Float32Array(currentMesh.geometry.attributes.normal.array.buffer, currentMesh.geometry.attributes.normal.array.byteOffset, currentMesh.geometry.drawRange.count*3);
+    const colors = new Float32Array(currentMesh.geometry.attributes.color.array.buffer, currentMesh.geometry.attributes.color.array.byteOffset, currentMesh.geometry.drawRange.count*3);
+    const uvs = new Float32Array(currentMesh.geometry.attributes.uv.array.buffer, currentMesh.geometry.attributes.uv.array.byteOffset, currentMesh.geometry.drawRange.count*2);
+    const ids = new Uint32Array(currentMesh.geometry.attributes.id.array.buffer, currentMesh.geometry.attributes.id.array.byteOffset, currentMesh.geometry.drawRange.count);
     // const indices = currentMesh.geometry.index.array;
     const indices = new Uint32Array(positions.length/3);
     for (let i = 0; i < indices.length; i++) {
