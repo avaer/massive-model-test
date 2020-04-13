@@ -158,7 +158,7 @@ let meshes = [];
     // container.add(o.scene);
   } */
 
-  meshes = await mesher.getChunks();
+  meshes = await mesher.getChunks(0.5);
   container.remove(mesher.currentMesh);
   for (let i = 0; i < meshes.length; i++) {
     const mesh = meshes[i];

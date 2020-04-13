@@ -214,7 +214,7 @@ class Mesher {
     this.renderer.attributes.update(uvsAttribute, 34962);
     geometry.setDrawRange(0, this.positionsIndex/3);
   }
-  async getChunks() {
+  async getChunks(factor) {
     const {currentMesh, packer, globalMaterial} = this;
 
     for (let i = 0; i < this.meshes.length; i++) {
@@ -282,7 +282,7 @@ class Mesher {
       colors,
       uvs,
       ids,
-      minTris: positions.length/9 * 0.3,
+      minTris: positions.length/9 * factor,
       // minTris: positions.length/9,
       aggressiveness: 7,
       base: 0.000000001,
