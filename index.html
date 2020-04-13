@@ -438,7 +438,7 @@ const meshes = [];
     normals,
     colors,
     uvs,
-    minTris: positions.length/9 * 0.2,
+    minTris: positions.length/9 * 0.3,
     // minTris: positions.length/9,
     aggressiveness: 7,
     base: 0.000000001,
@@ -464,12 +464,11 @@ const meshes = [];
   currentMesh.geometry.setDrawRange(0, Infinity);
   // return;
 
-  const mins = [-2, 0, -2];
-  const maxs = [2, 0, 2];
-  const scales = [1, 1, 1];
+  const mins = [-1, 0, -1];
+  const maxs = [1, 0, 1];
   const arrayBuffer = new ArrayBuffer(10 * 1024 * 1024);
   const res = await worker.request({
-    method: 'chunk',
+    method: 'chunkOne',
     positions,
     normals,
     colors,
@@ -478,34 +477,29 @@ const meshes = [];
     indices,
     mins,
     maxs,
-    scales,
     arrayBuffer,
   }, [arrayBuffer]);
   // console.log('got res 1', res);
 
-  container.remove(currentMesh);
-  currentMesh = null;
+  {
+    container.remove(currentMesh);
+    currentMesh = null;
 
-  let i = 0;
-  for (let x = mins[0]; x < maxs[0]; x++) {
-    for (let z = mins[2]; z < maxs[2]; z++) {
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.BufferAttribute(res.positions[i], 3));
-      geometry.setAttribute('normal', new THREE.BufferAttribute(res.normals[i], 3));
-      geometry.setAttribute('color', new THREE.BufferAttribute(res.colors[i], 3));
-      geometry.setAttribute('uv', new THREE.BufferAttribute(res.uvs[i], 2));
-      // geometry.setIndex(new THREE.BufferAttribute(res.indices[i], 1));
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(res.positions, 3));
+    geometry.setAttribute('normal', new THREE.BufferAttribute(res.normals, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(res.colors, 3));
+    geometry.setAttribute('uv', new THREE.BufferAttribute(res.uvs, 2));
+    // geometry.setIndex(new THREE.BufferAttribute(res.indices[i], 1));
+    // geometry.computeVertexNormals();
 
-      const mesh = new THREE.Mesh(geometry, globalMaterial);
-      mesh.frustumCulled = false;
-      meshes.push(mesh);
-      container.add(mesh);
+    const mesh = new THREE.Mesh(geometry, globalMaterial);
+    mesh.frustumCulled = false;
+    meshes.push(mesh);
+    container.add(mesh);
 
-      mesh.x = x;
-      mesh.z = z;
-
-      i++;
-    }
+    mesh.x = 0;
+    mesh.z = 0;
   }
 })();
 

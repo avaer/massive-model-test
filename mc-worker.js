@@ -193,6 +193,120 @@ const _handleMessage = data => {
       allocator.freeAll();
       break;
     }
+    case 'chunkOne': {
+      const allocator = new Allocator();
+
+      const {positions: positionsData, normals: normalsData, colors: colorsData, uvs: uvsData, ids: idsData, indices: indicesData, mins: minsData, maxs: maxsData, arrayBuffer} = data;
+      const positions = allocator.alloc(Float32Array, positionsData.length);
+      positions.set(positionsData);
+      const normals = allocator.alloc(Float32Array, normalsData.length);
+      normals.set(normalsData);
+      const colors = allocator.alloc(Float32Array, colorsData.length);
+      colors.set(colorsData);
+      const uvs = allocator.alloc(Float32Array, uvsData.length);
+      uvs.set(uvsData);
+      const ids = allocator.alloc(Float32Array, idsData.length);
+      ids.set(idsData);
+      const indices = allocator.alloc(Uint32Array, indicesData.length);
+      indices.set(indicesData);
+
+      const mins = allocator.alloc(Float32Array, 3);
+      mins[0] = minsData[0];
+      mins[1] = minsData[1];
+      mins[2] = minsData[2];
+      const maxs = allocator.alloc(Float32Array, 3);
+      maxs[0] = maxsData[0];
+      maxs[1] = maxsData[1];
+      maxs[2] = maxsData[2];
+
+      const outPositions = allocator.alloc(Float32Array, 500*1024);
+      const outNormals = allocator.alloc(Float32Array, 500*1024);
+      const outColors = allocator.alloc(Float32Array, 500*1024);
+      const outUvs = allocator.alloc(Float32Array, 500*1024);
+      const outIds = allocator.alloc(Uint32Array, 500*1024);
+      const outFaces = allocator.alloc(Uint32Array, 500*1024);
+
+      const outNumPositions = allocator.alloc(Uint32Array, 1);
+      const outNumNormals = allocator.alloc(Uint32Array, 1);
+      const outNumColors = allocator.alloc(Uint32Array, 1);
+      const outNumUvs = allocator.alloc(Uint32Array, 1);
+      const outNumIds = allocator.alloc(Uint32Array, 1);
+      const outNumFaces = allocator.alloc(Uint32Array, 1);
+
+      self.Module._doChunkOne(
+        positions.offset,
+        positions.length,
+        normals.offset,
+        normals.length,
+        colors.offset,
+        colors.length,
+        uvs.offset,
+        uvs.length,
+        ids.offset,
+        ids.length,
+        indices.offset,
+        indices.length,
+        mins.offset,
+        maxs.offset,
+        outPositions.offset,
+        outNumPositions.offset,
+        outNormals.offset,
+        outNumNormals.offset,
+        outColors.offset,
+        outNumColors.offset,
+        outUvs.offset,
+        outNumUvs.offset,
+        outIds.offset,
+        outNumIds.offset,
+        outFaces.offset,
+        outNumFaces.offset
+      );
+
+      let index = 0;
+      const numP = outNumPositions[0];
+      const outP = new Float32Array(arrayBuffer, index, numP);
+      outP.set(new Float32Array(outPositions.buffer, outPositions.byteOffset, numP));
+      index += Float32Array.BYTES_PER_ELEMENT * numP;
+
+      const numN = outNumNormals[0];
+      const outN = new Float32Array(arrayBuffer, index, numN);
+      outN.set(new Float32Array(outNormals.buffer, outNormals.byteOffset, numN));
+      index += Float32Array.BYTES_PER_ELEMENT * numN;
+
+      const numC = outNumColors[0];
+      const outC = new Float32Array(arrayBuffer, index, numC);
+      outC.set(new Float32Array(outColors.buffer, outColors.byteOffset, numC));
+      index += Float32Array.BYTES_PER_ELEMENT * numC;
+
+      const numU = outNumUvs[0];
+      const outU = new Float32Array(arrayBuffer, index, numU);
+      outU.set(new Float32Array(outUvs.buffer, outUvs.byteOffset, numU));
+      index += Float32Array.BYTES_PER_ELEMENT * numU;
+
+      const numX = outNumIds[0];
+      const outX = new Float32Array(arrayBuffer, index, numX);
+      outX.set(new Float32Array(outIds.buffer, outIds.byteOffset, numX));
+      index += Uint32Array.BYTES_PER_ELEMENT * numX;
+
+      const numI = outNumFaces[0];
+      const outI = new Uint32Array(arrayBuffer, index, numI);
+      outI.set(new Uint32Array(outFaces.buffer, outFaces.byteOffset, numI));
+      index += Uint32Array.BYTES_PER_ELEMENT * numI;
+
+      self.postMessage({
+        result: {
+          positions: outP,
+          normals: outN,
+          colors: outC,
+          uvs: outU,
+          ids: outX,
+          indices: outI,
+          arrayBuffer,
+        },
+      }, [arrayBuffer]);
+      allocator.freeAll();
+      break;
+    }
     case 'decimate': {
       const allocator = new Allocator();
 
