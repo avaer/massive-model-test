@@ -100,7 +100,7 @@ const mesher = new Mesher(renderer);
 let meshes = [];
 (async () => {
   const manager = new THREE.LoadingManager();
-  const objs = modelFiles.filter(m => /\.obj/.test(m));
+  /* const objs = modelFiles.filter(m => /\.obj/.test(m));
   const rowSize = 10;
   const numItems = 10;
   for (let i = 0; i < numItems; i++) {
@@ -135,14 +135,14 @@ let meshes = [];
       }
     });
     // container.add(o);
-  }
+  } */
 
-  /* {
+  {
     const p = makePromise();
     new GLTFLoader(manager).load('models/model.vrm', p.accept, function onProgress() {}, p.reject);
     const o = await p;
-    mesher.addScene(o.scene);
-  } */
+    mesher.addMesh(o.scene);
+  }
   /* {
     const p = makePromise();
     new GLTFLoader(manager).load('models/scene.glb', p.accept, function onProgress() {}, p.reject);
