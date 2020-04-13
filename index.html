@@ -219,14 +219,17 @@ let meshes = [];
     return arrayBuffer;
   };
   {
-    const body = await _serializeMesh(meshes[0]);
-    console.log('set body', body);
-    const res = await fetch('/d/mesh01.bin', {
-      method: 'PUT',
-      body,
-    });
-    if (!res.ok) {
-      throw new Error(`got invalid status code: ${res.status}`);
+    for (let i = 0; i < meshes.length; i++) {
+      const mesh = meshes[i];
+      const body = await _serializeMesh(mesh);
+      console.log('set body', mesh.x, mesh.z, body);
+      const res = await fetch(`/d/chunk:${mesh.x}:${mesh.z}.bin`, {
+        method: 'PUT',
+        body,
+      });
+      if (!res.ok) {
+        throw new Error(`got invalid status code: ${res.status}`);
+      }
     }
   }
 })();
