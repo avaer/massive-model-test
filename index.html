@@ -346,16 +346,16 @@ const meshes = [];
     const z = -Math.floor(i/rowSize);
 
     const o = await p2;
-    o && o.traverse(o => {
+    o.traverse(o => {
       if (o.isMesh) {
         o.geometry
           .applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI)))
           .applyMatrix4(new THREE.Matrix4().makeTranslation(-rowSize/2 + x, 0, z));
         o.material = materials;
         _mergeMesh(o);
-        // container.add(o);
       }
     });
+    // container.add(o);
   }
 
   {
