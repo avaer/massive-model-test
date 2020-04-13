@@ -39,12 +39,7 @@ class Mesher {
     this.uvsIndex = 0;
     this.idsIndex = 0;
     this.currentId = 0;
-    this.globalMaterial = new THREE.MeshStandardMaterial({
-      color: 0xFFFFFF,
-      vertexColors: true,
-      transparent: true,
-      alphaTest: 0.5,
-    });
+    this.globalMaterial = null
     this.currentMesh = null;
     this.packer = null;
     this.meshes = [];
@@ -68,6 +63,14 @@ class Mesher {
     geometry.setAttribute('uv', uvsAttribute);
     geometry.ids = new Uint32Array(NUM_POSITIONS);
     geometry.setDrawRange(0, 0);
+
+    this.globalMaterial = new THREE.MeshStandardMaterial({
+      map: null,
+      color: 0xFFFFFF,
+      vertexColors: true,
+      transparent: true,
+      alphaTest: 0.5,
+    });
 
     const mesh = new THREE.Mesh(geometry, this.globalMaterial);
     mesh.frustumCulled = false;
@@ -117,7 +120,7 @@ class Mesher {
     o.aabb = new THREE.Box3().setFromObject(o);
     this.aabb.union(o.aabb);
   }
-  mergeMesh(o) {
+  mergeMeshGeometry(o) {
     const {geometry, material} = this.currentMesh;
     const positionsAttribute = geometry.attributes.position;
     const positions = positionsAttribute.array;
@@ -135,9 +138,6 @@ class Mesher {
     }
     const mat = Array.isArray(o.material) ? o.material[0] : o.material;
     const {map} = mat;
-    if (map && map.image && o.geometry.attributes.uv) {
-      this.pushAtlasImage(map.image, this.uvsIndex, o.geometry.attributes.uv.array.length);
-    }
 
     new Float32Array(positions.buffer, positions.byteOffset + this.positionsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.position.array.length)
       .set(o.geometry.attributes.position.array);
@@ -215,7 +215,144 @@ class Mesher {
     this.renderer.attributes.update(uvsAttribute, 34962);
     geometry.setDrawRange(0, this.positionsIndex/3);
   }
-  async getChunks(factor) {
+  mergeMeshMaterial(o) {
+    if (o.geometry.index) {
+      o.geometry = o.geometry.toNonIndexed();
+    }
+
+    const mat = Array.isArray(o.material) ? o.material[0] : o.material;
+    const {map} = mat;
+    if (map && map.image && o.geometry.attributes.uv) {
+      this.pushAtlasImage(map.image, this.uvsIndex, o.geometry.attributes.uv.array.length);
+    }
+  }
+  async decimateMesh(factor) {
+    const {currentMesh} = this;
+
+    const positions = new Float32Array(currentMesh.geometry.attributes.position.array.buffer, currentMesh.geometry.attributes.position.array.byteOffset, currentMesh.geometry.drawRange.count*3);
+    const normals = new Float32Array(currentMesh.geometry.attributes.normal.array.buffer, currentMesh.geometry.attributes.normal.array.byteOffset, currentMesh.geometry.drawRange.count*3);
+    const colors = new Float32Array(currentMesh.geometry.attributes.color.array.buffer, currentMesh.geometry.attributes.color.array.byteOffset, currentMesh.geometry.drawRange.count*3);
+    const uvs = new Float32Array(currentMesh.geometry.attributes.uv.array.buffer, currentMesh.geometry.attributes.uv.array.byteOffset, currentMesh.geometry.drawRange.count*2);
+    const ids = new Uint32Array(currentMesh.geometry.ids.buffer, currentMesh.geometry.ids.byteOffset, currentMesh.geometry.drawRange.count);
+
+    const arrayBuffer = new ArrayBuffer(2 * 1024 * 1024);
+    const res = await worker.request({
+      method: 'decimate',
+      positions,
+      normals,
+      colors,
+      uvs,
+      ids,
+      minTris: positions.length/9 * factor,
+      // minTris: positions.length/9,
+      aggressiveness: 7,
+      base: 0.000000001,
+      iterationOffset: 3,
+      arrayBuffer,
+    }, [arrayBuffer]);
+
+    currentMesh.geometry.setAttribute('position', new THREE.BufferAttribute(res.positions, 3));
+    currentMesh.geometry.setAttribute('normal', new THREE.BufferAttribute(res.normals, 3));
+    currentMesh.geometry.setAttribute('color', new THREE.BufferAttribute(res.colors, 3));
+    currentMesh.geometry.setAttribute('uv', new THREE.BufferAttribute(res.uvs, 2));
+    currentMesh.geometry.setIndex(new THREE.BufferAttribute(res.indices, 1));
+    currentMesh.geometry.setDrawRange(0, Infinity);
+    currentMesh.geometry.ids = ids;
+    currentMesh.aabb = new THREE.Box3().setFromObject(currentMesh);
+    return currentMesh;
+  }
+  repackTexture() {
+    const {currentMesh, globalMaterial, packer} = this;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = packer.width;
+    canvas.height = packer.height;
+    packer.repack(false);
+    if (packer.bins.length > 0) {
+      const {bins: [{rects}]} = packer;
+      // console.log('got rects', rects);
+      const scale = packer.width/canvas.width;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#FFF';
+      ctx.fillRect(0, 0, 1, 1);
+      for (let i = 0; i < rects.length; i++) {
+        const rect = rects[i];
+        let {x, y, width: w, height: h, data: {image, offset, count}} = rect;
+        x++;
+        ctx.drawImage(image, x/scale, y/scale, w/scale, h/scale);
+
+        for (let i = 0; i < count; i += 2) {
+          let u = currentMesh.geometry.attributes.uv.array[offset + i];
+          let v = currentMesh.geometry.attributes.uv.array[offset + i + 1];
+          if (u !== 0 || v !== 0) {
+            u = Math.min(Math.max(u, 0), 1);
+            v = Math.min(Math.max(v, 0), 1);
+            u = (x + u*w)/packer.width;
+            v = (y + v*h)/packer.height;
+          }
+          currentMesh.geometry.attributes.uv.array[offset + i] = u;
+          currentMesh.geometry.attributes.uv.array[offset + i + 1] = v;
+        }
+      }
+      currentMesh.geometry.attributes.uv.updateRange.offset = 0;
+      currentMesh.geometry.attributes.uv.updateRange.count = -1;
+      currentMesh.geometry.attributes.uv.needsUpdate = true;
+      globalMaterial.map = new THREE.Texture(canvas);
+      globalMaterial.map.generateMipmaps = false;
+      globalMaterial.map.wrapS = globalMaterial.map.wrapT = THREE.ClampToEdgeWrapping; // THREE.RepeatWrapping;
+      globalMaterial.map.minFilter = THREE.LinearFilter;
+      globalMaterial.map.flipY = false;
+      globalMaterial.map.needsUpdate = true;
+      globalMaterial.needsUpdate = true;
+    }
+  }
+  async chunkMesh(x, z) {
+    const {currentMesh, globalMaterial} = this;
+
+    const positions = currentMesh.geometry.attributes.position.array;
+    const normals = currentMesh.geometry.attributes.normal.array;
+    const colors = currentMesh.geometry.attributes.color.array;
+    const uvs = currentMesh.geometry.attributes.uv.array;
+    const ids = currentMesh.geometry.ids;
+    // const indices = currentMesh.geometry.index.array;
+    const indices = new Uint32Array(positions.length/3);
+    for (let i = 0; i < indices.length; i++) {
+      indices[i] = i;
+    }
+
+    const mins = [x, 0, z];
+    const maxs = [x+1, 0, z+1];
+    const arrayBuffer = new ArrayBuffer(10 * 1024 * 1024);
+    const res = await worker.request({
+      method: 'chunkOne',
+      positions,
+      normals,
+      colors,
+      uvs,
+      ids,
+      indices,
+      mins,
+      maxs,
+      arrayBuffer,
+    }, [arrayBuffer]);
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(res.positions, 3));
+    geometry.setAttribute('normal', new THREE.BufferAttribute(res.normals, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(res.colors, 3));
+    geometry.setAttribute('uv', new THREE.BufferAttribute(res.uvs, 2));
+    // geometry.setIndex(new THREE.BufferAttribute(res.indices[i], 1));
+    // geometry.computeVertexNormals();
+
+    const mesh = new THREE.Mesh(geometry, globalMaterial);
+    mesh.frustumCulled = false;
+
+    mesh.x = x;
+    mesh.z = z;
+
+    return mesh;
+  }
+  async getChunks() {
     const {currentMesh, packer, globalMaterial} = this;
 
     let chunkWeights = {};
@@ -252,7 +389,7 @@ class Mesher {
       }
       return budget;
     });
-    console.log('got mesh budgets', meshBudgets);
+    // console.log('got mesh budgets', meshBudgets);
     /* const extents = [];
     let seenIndices = {};
     const _getMeshesInChunk = (x, z) => {
@@ -297,123 +434,44 @@ class Mesher {
         }
       }
     } */
-    // console.log('got extents', extents);
+    console.log('got mesh budgets', meshBudgets.slice(0, 10));
 
+    const decimatedMeshes = [];
     for (let i = 0; i < this.meshes.length; i++) {
+      console.log('decimate', i, this.meshes.length);
       const mesh = this.meshes[i];
-      this.mergeMesh(mesh);
+      this.reset();
+      this.mergeMeshGeometry(mesh);
+      const decimatedMesh = await this.decimateMesh(0.5);
+      decimatedMeshes.push(decimatedMesh);
     }
-    
-    const canvas = document.createElement('canvas');
-    canvas.width = packer.width;
-    canvas.height = packer.height;
-    packer.repack(false);
-    if (packer.bins.length > 0) {
-      const {bins: [{rects}]} = packer;
-      // console.log('got rects', rects);
-      const scale = packer.width/canvas.width;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#FFF';
-      ctx.fillRect(0, 0, 1, 1);
-      for (let i = 0; i < rects.length; i++) {
-        const rect = rects[i];
-        let {x, y, width: w, height: h, data: {image, offset, count}} = rect;
-        x++;
-        ctx.drawImage(image, x/scale, y/scale, w/scale, h/scale);
+    this.meshes = decimatedMeshes;
 
-        for (let i = 0; i < count; i += 2) {
-          let u = currentMesh.geometry.attributes.uv.array[offset + i];
-          let v = currentMesh.geometry.attributes.uv.array[offset + i + 1];
-          if (u !== 0 || v !== 0) {
-            u = Math.min(Math.max(u, 0), 1);
-            v = Math.min(Math.max(v, 0), 1);
-            u = (x + u*w)/packer.width;
-            v = (y + v*h)/packer.height;
+    console.log('got decimated meshes', decimatedMeshes);
+
+    const chunkMeshes = [];
+    for (let x = Math.floor(this.aabb.min.x); x < Math.ceil(this.aabb.max.x); x++) {
+      for (let z = Math.floor(this.aabb.min.z); z < Math.ceil(this.aabb.max.z); z++) {
+        console.log('chunk', x, z);
+        const meshes = _getMeshesInChunk(x, z);
+        if (meshes.length > 0) {
+          this.reset();
+          for (let i = 0; i < meshes.length; i++) {
+            const mesh = meshes[i];
+            this.mergeMeshMaterial(mesh);
+            this.mergeMeshGeometry(mesh);
           }
-          currentMesh.geometry.attributes.uv.array[offset + i] = u;
-          currentMesh.geometry.attributes.uv.array[offset + i + 1] = v;
+          this.repackTexture();
+          const chunkMesh = await this.chunkMesh(x, z);
+          chunkMeshes.push(chunkMesh);
         }
       }
-      currentMesh.geometry.attributes.uv.updateRange.offset = 0;
-      currentMesh.geometry.attributes.uv.updateRange.count = -1;
-      currentMesh.geometry.attributes.uv.needsUpdate = true;
-      globalMaterial.map = new THREE.Texture(canvas);
-      globalMaterial.map.generateMipmaps = false;
-      globalMaterial.map.wrapS = globalMaterial.map.wrapT = THREE.ClampToEdgeWrapping; // THREE.RepeatWrapping;
-      globalMaterial.map.minFilter = THREE.LinearFilter;
-      globalMaterial.map.flipY = false;
-      globalMaterial.map.needsUpdate = true;
-      globalMaterial.needsUpdate = true;
-      // canvas.style.imageRendering = 'pixelated';
-      // document.body.appendChild(canvas);
     }
+    this.meshes = chunkMeshes;
 
-    // return;
+    console.log('got chunk meshes', chunkMeshes);
 
-    let positions = new Float32Array(currentMesh.geometry.attributes.position.array.buffer, currentMesh.geometry.attributes.position.array.byteOffset, currentMesh.geometry.drawRange.count*3);
-    let normals = new Float32Array(currentMesh.geometry.attributes.normal.array.buffer, currentMesh.geometry.attributes.normal.array.byteOffset, currentMesh.geometry.drawRange.count*3);
-    let colors = new Float32Array(currentMesh.geometry.attributes.color.array.buffer, currentMesh.geometry.attributes.color.array.byteOffset, currentMesh.geometry.drawRange.count*3);
-    let uvs = new Float32Array(currentMesh.geometry.attributes.uv.array.buffer, currentMesh.geometry.attributes.uv.array.byteOffset, currentMesh.geometry.drawRange.count*2);
-    let ids = new Uint32Array(currentMesh.geometry.ids.buffer, currentMesh.geometry.ids.byteOffset, currentMesh.geometry.drawRange.count);
-
-    const arrayBuffer2 = new ArrayBuffer(40 * 1024 * 1024);
-    const res2 = await worker.request({
-      method: 'decimate',
-      positions,
-      normals,
-      colors,
-      uvs,
-      ids,
-      minTris: positions.length/9 * factor,
-      // minTris: positions.length/9,
-      aggressiveness: 7,
-      base: 0.000000001,
-      iterationOffset: 3,
-      arrayBuffer: arrayBuffer2,
-    }, [arrayBuffer2]);
-
-    positions = res2.positions;
-    normals = res2.normals;
-    colors = res2.colors;
-    uvs = res2.uvs;
-    ids = res2.ids;
-    let {indices} = res2;
-
-    currentMesh.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    currentMesh.geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-    currentMesh.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    currentMesh.geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
-    currentMesh.geometry.setIndex(new THREE.BufferAttribute(indices, 1));
-    currentMesh.geometry.setDrawRange(0, Infinity);
-
-    const mins = [-1, 0, -1];
-    const maxs = [1, 0, 1];
-    const arrayBuffer = new ArrayBuffer(10 * 1024 * 1024);
-    const res = await worker.request({
-      method: 'chunkOne',
-      positions,
-      normals,
-      colors,
-      uvs,
-      ids,
-      indices,
-      mins,
-      maxs,
-      arrayBuffer,
-    }, [arrayBuffer]);
-    // console.log('got res 1', res);
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(res.positions, 3));
-    geometry.setAttribute('normal', new THREE.BufferAttribute(res.normals, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(res.colors, 3));
-    geometry.setAttribute('uv', new THREE.BufferAttribute(res.uvs, 2));
-    // geometry.setIndex(new THREE.BufferAttribute(res.indices[i], 1));
-    // geometry.computeVertexNormals();
-
-    const mesh = new THREE.Mesh(geometry, globalMaterial);
-    mesh.frustumCulled = false;
-    return [mesh];
+    return this.meshes;
   }
 }
 

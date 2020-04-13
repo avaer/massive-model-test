@@ -96,13 +96,13 @@ orbitControls.enableMiddleZoom = false;
 orbitControls.update();
 
 const mesher = new Mesher(renderer);
-container.add(mesher.currentMesh);
+// container.add(mesher.currentMesh);
 let meshes = [];
 (async () => {
   const manager = new THREE.LoadingManager();
   const objs = modelFiles.filter(m => /\.obj/.test(m));
   const rowSize = 10;
-  const numItems = 100;
+  const numItems = 10;
   for (let i = 0; i < numItems; i++) {
     console.log(i);
     const u = `models/${objs[i]}`;
@@ -137,12 +137,12 @@ let meshes = [];
     // container.add(o);
   }
 
-  {
+  /* {
     const p = makePromise();
     new GLTFLoader(manager).load('models/model.vrm', p.accept, function onProgress() {}, p.reject);
     const o = await p;
     mesher.addScene(o.scene);
-  }
+  } */
   /* {
     const p = makePromise();
     new GLTFLoader(manager).load('models/scene.glb', p.accept, function onProgress() {}, p.reject);
@@ -159,7 +159,7 @@ let meshes = [];
   } */
 
   meshes = await mesher.getChunks(0.5);
-  container.remove(mesher.currentMesh);
+  // container.remove(mesher.currentMesh);
   for (let i = 0; i < meshes.length; i++) {
     const mesh = meshes[i];
     mesh.x = 0;
