@@ -49,6 +49,13 @@ class Mesher {
     this.reset();
   }
   reset() {
+    this.positionsIndex = 0;
+    this.normalsIndex = 0;
+    this.colorsIndex = 0;
+    this.uvsIndex = 0;
+    this.idsIndex = 0;
+    this.currentId = 0;
+
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(NUM_POSITIONS*3);
     const positionsAttribute = new THREE.BufferAttribute(positions, 3);
