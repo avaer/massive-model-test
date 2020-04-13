@@ -323,7 +323,7 @@ const meshes = [];
   const manager = new THREE.LoadingManager();
   const objs = modelFiles.filter(m => /\.obj/.test(m));
   const rowSize = 10;
-  const numItems = 10;
+  const numItems = 50;
   for (let i = 0; i < numItems; i++) {
     console.log(i);
     const u = `models/${objs[i]}`;
@@ -346,13 +346,14 @@ const meshes = [];
     const z = -Math.floor(i/rowSize);
 
     const o = await p2;
-    o.traverse(o => {
+    o && o.traverse(o => {
       if (o.isMesh) {
         o.geometry
           .applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI)))
           .applyMatrix4(new THREE.Matrix4().makeTranslation(-rowSize/2 + x, 0, z));
         o.material = materials;
         _mergeMesh(o);
+        // container.add(o);
       }
     });
   }
@@ -462,7 +463,8 @@ const meshes = [];
   currentMesh.geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
   currentMesh.geometry.setIndex(new THREE.BufferAttribute(indices, 1));
   currentMesh.geometry.setDrawRange(0, Infinity);
-  // return;
+
+  return;
 
   const mins = [-1, 0, -1];
   const maxs = [1, 0, 1];
