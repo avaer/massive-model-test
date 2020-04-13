@@ -167,6 +167,56 @@ let meshes = [];
     const mesh = meshes[i];
     container.add(mesh);
   }
+
+  const _serializeMesh = mesh => {
+    const positions = mesh.geometry.attributes.position.array;
+    const normals = mesh.geometry.attributes.position.array;
+    const colors = mesh.geometry.attributes.position.array;
+    const uvs = mesh.geometry.attributes.position.array;
+    const ids = mesh.geometry.attributes.id.array;
+
+    const arrayBuffer = new ArrayBuffer(
+      Uint32Array.BYTES_PER_ELEMENT +
+      positions.length*Float32Array.BYTES_PER_ELEMENT +
+      Uint32Array.BYTES_PER_ELEMENT +
+      normals.length*Float32Array.BYTES_PER_ELEMENT +
+      Uint32Array.BYTES_PER_ELEMENT +
+      colors.length*Float32Array.BYTES_PER_ELEMENT +
+      Uint32Array.BYTES_PER_ELEMENT +
+      uvs.length*Float32Array.BYTES_PER_ELEMENT +
+      Uint32Array.BYTES_PER_ELEMENT +
+      ids.length*Uint32Array.BYTES_PER_ELEMENT
+    );
+
+    let index = 0;
+    const _set = o => {
+      new o.constructor(arrayBuffer, index, o.length).set(o);
+      index += o.constructor.BYTES_PER_ELEMENT;
+    };
+    _set(Uint32Array.from([positions.length]));
+    _set(positions);
+    _set(Uint32Array.from([normals.length]));
+    _set(normals);
+    _set(Uint32Array.from([colors.length]));
+    _set(colors);
+    _set(Uint32Array.from([uvs.length]));
+    _set(uvs);
+    _set(Uint32Array.from([ids.length]));
+    _set(ids);
+
+    return arrayBuffer;
+  };
+  {
+    const body = _serializeMesh(meshes[0]);
+    console.log('set body', body);
+    const res = await fetch('/d/mesh01.bin', {
+      method: 'PUT',
+      body,
+    });
+    if (!res.ok) {
+      throw new Error(`got invalid status code: ${res.status}`);
+    }
+  }
 })();
 
 function animate() {
