@@ -310,7 +310,7 @@ const _handleMessage = data => {
     case 'decimate': {
       const allocator = new Allocator();
 
-      const {positions: positionsData, normals: normalsData, colors: colorsData, uvs: uvsData, minTris, aggressiveness, base, iterationOffset, arrayBuffer} = data;
+      const {positions: positionsData, normals: normalsData, colors: colorsData, uvs: uvsData, ids: idsData, minTris, aggressiveness, base, iterationOffset, arrayBuffer} = data;
       const positions = allocator.alloc(Float32Array, positionsData.length);
       positions.set(positionsData);
       const normals = allocator.alloc(Float32Array, normalsData.length);
@@ -319,6 +319,8 @@ const _handleMessage = data => {
       colors.set(colorsData);
       const uvs = allocator.alloc(Float32Array, uvsData.length);
       uvs.set(uvsData);
+      const ids = allocator.alloc(Float32Array, idsData.length);
+      ids.set(idsData);
       const indices = allocator.alloc(Uint32Array, 1024*1024);
 
       const numPositions = allocator.alloc(Uint32Array, 1);
@@ -329,6 +331,8 @@ const _handleMessage = data => {
       numColors[0] = colors.length;
       const numUvs = allocator.alloc(Uint32Array, 1);
       numUvs[0] = uvs.length;
+      const numIds = allocator.alloc(Uint32Array, 1);
+      numIds[0] = ids.length;
       const numIndices = allocator.alloc(Uint32Array, 1);
       numIndices[0] = indices.length;
 
@@ -341,6 +345,8 @@ const _handleMessage = data => {
         numColors.offset,
         uvs.offset,
         numUvs.offset,
+        ids.offset,
+        numIds.offset,
         minTris,
         aggressiveness,
         base,
@@ -352,23 +358,27 @@ const _handleMessage = data => {
       let index = 0;
       const outP = new Float32Array(arrayBuffer, index, numPositions[0]);
       outP.set(new Float32Array(positions.buffer, positions.byteOffset, numPositions[0]));
-      index += Float32Array.BYTES_PER_ELEMENT * positions.length;
+      index += Float32Array.BYTES_PER_ELEMENT * numPositions[0];
 
       const outN = new Float32Array(arrayBuffer, index, numNormals[0]);
       outN.set(new Float32Array(normals.buffer, normals.byteOffset, numNormals[0]));
-      index += Float32Array.BYTES_PER_ELEMENT * normals.length;
+      index += Float32Array.BYTES_PER_ELEMENT * numNormals[0];
 
       const outC = new Float32Array(arrayBuffer, index, numColors[0]);
       outC.set(new Float32Array(colors.buffer, colors.byteOffset, numColors[0]));
-      index += Float32Array.BYTES_PER_ELEMENT * colors.length;
+      index += Float32Array.BYTES_PER_ELEMENT * numColors[0];
 
       const outU = new Float32Array(arrayBuffer, index, numUvs[0]);
       outU.set(new Float32Array(uvs.buffer, uvs.byteOffset, numUvs[0]));
-      index += Float32Array.BYTES_PER_ELEMENT * uvs.length;
+      index += Float32Array.BYTES_PER_ELEMENT * numUvs[0];
+
+      const outX = new Float32Array(arrayBuffer, index, numIds[0]);
+      outX.set(new Float32Array(uvs.buffer, uvs.byteOffset, numIds[0]));
+      index += Float32Array.BYTES_PER_ELEMENT * numIds[0];
 
       const outI = new Uint32Array(arrayBuffer, index, numIndices[0]);
       outI.set(new Uint32Array(indices.buffer, indices.byteOffset, numIndices[0]));
-      index += Uint32Array.BYTES_PER_ELEMENT * indices.length;
+      index += Uint32Array.BYTES_PER_ELEMENT * numIndices[0];
 
       self.postMessage({
         result: {
@@ -376,6 +386,7 @@ const _handleMessage = data => {
           normals: outN,
           colors: outC,
           uvs: outU,
+          ids: outX,
           indices: outI,
           arrayBuffer,
         },

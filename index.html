@@ -134,6 +134,8 @@ const meshes = [];
   let normalsIndex = 0;
   let colorsIndex = 0;
   let uvsIndex = 0;
+  let idsIndex = 0;
+  let currentId = 0;
 
   const globalMaterial = new THREE.MeshStandardMaterial({
     color: 0xFFFFFF,
@@ -163,7 +165,11 @@ const meshes = [];
     let indexIndex = 0;
     const indexAttribute = new THREE.BufferAttribute(index, 1);
     geometry.setIndex(indexAttribute); */
+    geometry.ids = new Uint32Array(NUM_POSITIONS);
+    idsIndex = 0;
     geometry.setDrawRange(0, 0);
+
+    currentId = 0;
 
     // window.colorsAttribute = geometry;
 
@@ -232,6 +238,7 @@ const meshes = [];
     const colors = colorsAttribute.array;
     const uvsAttribute = geometry.attributes.uv;
     const uvs = uvsAttribute.array;
+    const {ids} = geometry;
 
     o.geometry.applyMatrix4(o.matrixWorld);
     if (o.geometry.index) {
@@ -309,6 +316,11 @@ const meshes = [];
       uvsIndex += o.geometry.attributes.position.array.length/3*2;
     }
 
+    new Float32Array(ids.buffer, ids.byteOffset + idsIndex*Uint32Array.BYTES_PER_ELEMENT, o.geometry.attributes.position.array.length/3)
+      .fill(currentId);
+    idsIndex += o.geometry.attributes.position.array.length/3*Uint32Array.BYTES_PER_ELEMENT;
+    currentId++;
+
     positionsAttribute.needsUpdate = true;
     renderer.attributes.update(positionsAttribute, 34962);
     normalsAttribute.needsUpdate = true;
@@ -323,7 +335,7 @@ const meshes = [];
   const manager = new THREE.LoadingManager();
   const objs = modelFiles.filter(m => /\.obj/.test(m));
   const rowSize = 10;
-  const numItems = 50;
+  const numItems = 100;
   for (let i = 0; i < numItems; i++) {
     console.log(i);
     const u = `models/${objs[i]}`;
@@ -395,8 +407,6 @@ const meshes = [];
       let {x, y, width: w, height: h, data: {image, offset, count}} = rect;
       x++;
       ctx.drawImage(image, x/scale, y/scale, w/scale, h/scale);
-      window.canvas = canvas;
-      window.ctx = ctx;
 
       for (let i = 0; i < count; i += 2) {
         let u = currentMesh.geometry.attributes.uv.array[offset + i];
@@ -431,7 +441,8 @@ const meshes = [];
   let normals = new Float32Array(currentMesh.geometry.attributes.normal.array.buffer, currentMesh.geometry.attributes.normal.array.byteOffset, currentMesh.geometry.drawRange.count*3);
   let colors = new Float32Array(currentMesh.geometry.attributes.color.array.buffer, currentMesh.geometry.attributes.color.array.byteOffset, currentMesh.geometry.drawRange.count*3);
   let uvs = new Float32Array(currentMesh.geometry.attributes.uv.array.buffer, currentMesh.geometry.attributes.uv.array.byteOffset, currentMesh.geometry.drawRange.count*2);
-  
+  let ids = new Uint32Array(currentMesh.geometry.ids.buffer, currentMesh.geometry.ids.byteOffset, currentMesh.geometry.drawRange.count);
+
   const arrayBuffer2 = new ArrayBuffer(40 * 1024 * 1024);
   const res2 = await worker.request({
     method: 'decimate',
@@ -439,6 +450,7 @@ const meshes = [];
     normals,
     colors,
     uvs,
+    ids,
     minTris: positions.length/9 * 0.3,
     // minTris: positions.length/9,
     aggressiveness: 7,
@@ -447,14 +459,11 @@ const meshes = [];
     arrayBuffer: arrayBuffer2,
   }, [arrayBuffer2]);
 
-  const newPositions = res2.positions;
-  const newNormals = res2.normals;
-  const newColors = res2.colors;
-  const newUvs = res2.uvs;
-  positions = newPositions;
-  normals = newNormals;
-  colors = newColors;
-  uvs = newUvs;
+  positions = res2.positions;
+  normals = res2.normals;
+  colors = res2.colors;
+  uvs = res2.uvs;
+  ids = res2.ids;
   let {indices} = res2;
 
   currentMesh.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -475,7 +484,7 @@ const meshes = [];
     normals,
     colors,
     uvs,
-    ids: new Uint32Array(positions.length/3),
+    ids,
     indices,
     mins,
     maxs,
