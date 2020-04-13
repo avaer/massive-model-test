@@ -167,7 +167,7 @@ const _handleMessage = data => {
         index += Float32Array.BYTES_PER_ELEMENT * numU;
 
         const numX = outNumIds[i];
-        const outX = new Float32Array(self.Module.HEAP8.buffer, self.Module.HEAP8.byteOffset + outUvs[i], numX);
+        const outX = new Float32Array(self.Module.HEAP8.buffer, self.Module.HEAP8.byteOffset + outIds[i], numX);
         new Float32Array(arrayBuffer, index, numX).set(outX);
         outXs[i] = outX;
         index += Float32Array.BYTES_PER_ELEMENT * numX;
