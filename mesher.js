@@ -2,6 +2,7 @@ import THREE from './three.module.js';
 import maxrects from './maxrects-packer.min.js';
 
 const NUM_POSITIONS = 2 * 1024 * 1024;
+const TEXTURE_SIZE = 4*1024;
 
 const _makeWasmWorker = () => {
   let cbs = [];
@@ -75,7 +76,7 @@ class Mesher {
     const mesh = new THREE.Mesh(geometry, this.globalMaterial);
     mesh.frustumCulled = false;
     this.currentMesh = mesh;
-    this.packer = new maxrects.MaxRectsPacker(8*1024, 8*1024, 0, {
+    this.packer = new maxrects.MaxRectsPacker(TEXTURE_SIZE, TEXTURE_SIZE, 0, {
       smart: true,
       pot: true,
       square: false,
