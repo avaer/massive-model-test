@@ -205,7 +205,7 @@ const _handleMessage = data => {
       colors.set(colorsData);
       const uvs = allocator.alloc(Float32Array, uvsData.length);
       uvs.set(uvsData);
-      const ids = allocator.alloc(Float32Array, idsData.length);
+      const ids = allocator.alloc(Uint32Array, idsData.length);
       ids.set(idsData);
       const indices = allocator.alloc(Uint32Array, indicesData.length);
       indices.set(indicesData);
@@ -284,8 +284,8 @@ const _handleMessage = data => {
       index += Float32Array.BYTES_PER_ELEMENT * numU;
 
       const numX = outNumIds[0];
-      const outX = new Float32Array(arrayBuffer, index, numX);
-      outX.set(new Float32Array(outIds.buffer, outIds.byteOffset, numX));
+      const outX = new Uint32Array(arrayBuffer, index, numX);
+      outX.set(new Uint32Array(outIds.buffer, outIds.byteOffset, numX));
       index += Uint32Array.BYTES_PER_ELEMENT * numX;
 
       const numI = outNumFaces[0];
@@ -319,7 +319,7 @@ const _handleMessage = data => {
       colors.set(colorsData);
       const uvs = allocator.alloc(Float32Array, uvsData.length);
       uvs.set(uvsData);
-      const ids = allocator.alloc(Float32Array, idsData.length);
+      const ids = allocator.alloc(Uint32Array, idsData.length);
       ids.set(idsData);
       const indices = allocator.alloc(Uint32Array, 1024*1024);
 
@@ -372,9 +372,9 @@ const _handleMessage = data => {
       outU.set(new Float32Array(uvs.buffer, uvs.byteOffset, numUvs[0]));
       index += Float32Array.BYTES_PER_ELEMENT * numUvs[0];
 
-      const outX = new Float32Array(arrayBuffer, index, numIds[0]);
-      outX.set(new Float32Array(uvs.buffer, uvs.byteOffset, numIds[0]));
-      index += Float32Array.BYTES_PER_ELEMENT * numIds[0];
+      const outX = new Uint32Array(arrayBuffer, index, numIds[0]);
+      outX.set(new Uint32Array(ids.buffer, ids.byteOffset, numIds[0]));
+      index += Uint32Array.BYTES_PER_ELEMENT * numIds[0];
 
       const outI = new Uint32Array(arrayBuffer, index, numIndices[0]);
       outI.set(new Uint32Array(indices.buffer, indices.byteOffset, numIndices[0]));
