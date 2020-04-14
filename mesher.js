@@ -1,7 +1,7 @@
 import THREE from './three.module.js';
 import maxrects from './maxrects-packer.min.js';
 
-const NUM_POSITIONS = 2 * 1024 * 1024;
+const NUM_POSITIONS = 8 * 1024 * 1024;
 const TEXTURE_SIZE = 4*1024;
 const CHUNK_SIZE = 16;
 
@@ -63,6 +63,8 @@ class Mesher {
     this.packer = null;
     this.meshes = [];
     this.aabb = new THREE.Box3();
+    this.arrayBuffer = null;
+    this.arrayBuffers = [];
 
     this.reset();
   }
@@ -74,20 +76,45 @@ class Mesher {
     this.idsIndex = 0;
     this.currentId = 0;
 
+    if (!this.arrayBuffer) {
+      this.arrayBuffer = this.arrayBuffers.pop();
+    }
+    if (!this.arrayBuffer) {
+      const arrayBufferSize =
+        NUM_POSITIONS*3*Float32Array.BYTES_PER_ELEMENT +
+        NUM_POSITIONS*3*Float32Array.BYTES_PER_ELEMENT +
+        NUM_POSITIONS*3*Float32Array.BYTES_PER_ELEMENT +
+        NUM_POSITIONS*2*Float32Array.BYTES_PER_ELEMENT +
+        NUM_POSITIONS*Uint32Array.BYTES_PER_ELEMENT;
+      this.arrayBuffer = new ArrayBuffer(arrayBufferSize);
+    }
+    const {arrayBuffer} = this;
+    let index = 0;
+
+    const positions = new Float32Array(arrayBuffer, index, NUM_POSITIONS*3);
+    index += Float32Array.BYTES_PER_ELEMENT * NUM_POSITIONS*3;
+
+    const normals = new Float32Array(arrayBuffer, index, NUM_POSITIONS*3);
+    index += Float32Array.BYTES_PER_ELEMENT * NUM_POSITIONS*3;
+
+    const colors = new Float32Array(arrayBuffer, index, NUM_POSITIONS*3);
+    index += Float32Array.BYTES_PER_ELEMENT * NUM_POSITIONS*3;
+
+    const uvs = new Float32Array(arrayBuffer, index, NUM_POSITIONS*2);
+    index += Float32Array.BYTES_PER_ELEMENT * NUM_POSITIONS*2;
+
+    const ids = new Uint32Array(arrayBuffer, index, NUM_POSITIONS);
+    index += Uint32Array.BYTES_PER_ELEMENT * NUM_POSITIONS;
+
     const geometry = new THREE.BufferGeometry();
-    const positions = new Float32Array(NUM_POSITIONS*3);
     const positionsAttribute = new THREE.BufferAttribute(positions, 3);
     geometry.setAttribute('position', positionsAttribute);
-    const normals = new Float32Array(NUM_POSITIONS*3);
     const normalsAttribute = new THREE.BufferAttribute(normals, 3);
     geometry.setAttribute('normal', normalsAttribute);
-    const colors = new Float32Array(NUM_POSITIONS*3);
     const colorsAttribute = new THREE.BufferAttribute(colors, 3);
     geometry.setAttribute('color', colorsAttribute);
-    const uvs = new Float32Array(NUM_POSITIONS*2);
     const uvsAttribute = new THREE.BufferAttribute(uvs, 2);
     geometry.setAttribute('uv', uvsAttribute);
-    const ids = new Uint32Array(NUM_POSITIONS);
     const idsAttribute = new THREE.BufferAttribute(ids, 1);
     geometry.setAttribute('id', idsAttribute);
     geometry.setDrawRange(0, 0);
@@ -264,6 +291,43 @@ class Mesher {
       }
     });
   }
+  mergePacker(packer) {
+    for (let j = 0; j < packer.images.length; j++) {
+      const {image, currentIds} = packer.images[j];
+      for (let k = 0; k < currentIds.length; k++) {
+        this.pushAtlasImage(image, currentIds[k]);
+      }
+    }
+  }
+  splitOversizedMesh(maxSize) {
+    const {currentMesh} = this;
+    const numIndices = currentMesh.geometry.attributes.position.array.length/3;
+    if (numIndices > maxSize) {
+      const result = [];
+      for (let index = 0; index < numIndices; index += maxSize) {
+        const positions = new Float32Array(currentMesh.geometry.attributes.position.array.buffer, currentMesh.geometry.attributes.position.array.byteOffset + index*3*Float32Array.BYTES_PER_ELEMENT, currentMesh.geometry.drawRange.count*3);
+        const normals = new Float32Array(currentMesh.geometry.attributes.normal.array.buffer, currentMesh.geometry.attributes.normal.array.byteOffset + index*3*Float32Array.BYTES_PER_ELEMENT, currentMesh.geometry.drawRange.count*3);
+        const colors = new Float32Array(currentMesh.geometry.attributes.color.array.buffer, currentMesh.geometry.attributes.color.array.byteOffset + index*3*Float32Array.BYTES_PER_ELEMENT, currentMesh.geometry.drawRange.count*3);
+        const uvs = new Float32Array(currentMesh.geometry.attributes.uv.array.buffer, currentMesh.geometry.attributes.uv.array.byteOffset + index*2*Float32Array.BYTES_PER_ELEMENT, currentMesh.geometry.drawRange.count*2);
+        const ids = new Uint32Array(currentMesh.geometry.attributes.id.array.buffer, currentMesh.geometry.attributes.id.array.byteOffset + index*Float32Array.BYTES_PER_ELEMENT, currentMesh.geometry.drawRange.count);
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+        geometry.setAttribute('id', new THREE.BufferAttribute(ids, 1));
+
+        const material = makeGlobalMaterial();
+        const mesh = new THREE.Mesh(geometry, maxSize);
+        // mesh.frustumCulled = false;
+        result.push(mesh);
+      }
+      return result;
+    } else {
+      return [this.currentMesh];
+    }
+  }
   async decimateMesh(minTris) {
     const {currentMesh} = this;
 
@@ -273,6 +337,8 @@ class Mesher {
     const uvs = new Float32Array(currentMesh.geometry.attributes.uv.array.buffer, currentMesh.geometry.attributes.uv.array.byteOffset, currentMesh.geometry.drawRange.count*2);
     const ids = new Uint32Array(currentMesh.geometry.attributes.id.array.buffer, currentMesh.geometry.attributes.id.array.byteOffset, currentMesh.geometry.drawRange.count);
 
+    const {arrayBuffer} = this;
+    this.arrayBuffer = null;
     const res = await worker.request({
       method: 'decimate',
       positions,
@@ -280,12 +346,17 @@ class Mesher {
       colors,
       uvs,
       ids,
-      minTris: minTris === Infinity ? positions.length/9 : minTris,
+      // minTris: minTris === Infinity ? positions.length/9 : minTris,
+      minTris: positions.length/9 * 0.5,
       // minTris: positions.length/9,
+      quantization: 0.1,
+      targetError: 0.1,
       aggressiveness: 7,
       base: 0.000000001,
       iterationOffset: 3,
-    });
+      arrayBuffer,
+    }, [arrayBuffer]);
+    this.arrayBuffers.push(res.arrayBuffer);
 
     currentMesh.geometry.setAttribute('position', new THREE.BufferAttribute(res.positions, 3));
     currentMesh.geometry.setAttribute('normal', new THREE.BufferAttribute(res.normals, 3));
@@ -386,7 +457,8 @@ class Mesher {
 
     const mins = [x, 0, z];
     const maxs = [x+CHUNK_SIZE, 0, z+CHUNK_SIZE];
-    const arrayBuffer = new ArrayBuffer(10 * 1024 * 1024);
+    const {arrayBuffer} = this;
+    this.arrayBuffer = null;
     const res = await worker.request({
       method: 'chunkOne',
       positions,
@@ -399,6 +471,7 @@ class Mesher {
       maxs,
       arrayBuffer,
     }, [arrayBuffer]);
+    this.arrayBuffers.push(res.arrayBuffer);
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(res.positions, 3));
@@ -449,35 +522,76 @@ class Mesher {
     x *= CHUNK_SIZE;
     z *= CHUNK_SIZE;
 
+    // XXX break up large meshes
+
     const meshes = this.getMeshesInChunk(x, z);
     const meshBudgets = this.getMeshBudgets(meshes);
-    console.log('got mesh budgets', meshBudgets);
 
     const decimatedMeshes = [];
+    const decimatedMeshPackers = [];
     for (let i = 0; i < meshes.length; i++) {
       const mesh = meshes[i];
       const meshBudget = meshBudgets[i];
+
       this.reset();
       this.mergeMeshGeometryScene(mesh, true, false);
+      decimatedMeshPackers.push(this.packer);
+
+      /* for (let i = 0; i < this.currentMesh.geometry.attributes.position.array.length; i++) {
+        this.currentMesh.geometry.attributes.position.array[i] = Math.floor(this.currentMesh.geometry.attributes.position.array[i]/0.05)*0.05;
+      }
+      const a = new THREE.Vector3();
+      const b = new THREE.Vector3();
+      const c = new THREE.Vector3();
+      const cb = new THREE.Vector3();
+      const ab = new THREE.Vector3();
+      const positions = this.currentMesh.geometry.attributes.position.array;
+      const normals = this.currentMesh.geometry.attributes.normal.array;
+      window.positions = positions;
+      window.normals = normals;
+      for (let i = 0; i < positions.length; i += 9) {
+        a.fromArray(positions, i);
+        b.fromArray(positions, i+3);
+        c.fromArray(positions, i+6);
+
+        cb.subVectors(c, b);
+        ab.subVectors(a, b);
+        cb.cross(ab);
+
+        normals[ i ] = cb.x;
+        normals[ i + 1 ] = cb.y;
+        normals[ i + 2 ] = cb.z;
+
+        normals[ i + 3 ] = cb.x;
+        normals[ i + 4 ] = cb.y;
+        normals[ i + 5 ] = cb.z;
+
+        normals[ i + 6 ] = cb.x;
+        normals[ i + 7 ] = cb.y;
+        normals[ i + 8 ] = cb.z;
+      }
+      for (let i = 0; i < positions.length; i += 3) {
+        const length = Math.sqrt(normals[i] * normals[i] + normals[i+1] * normals[i+1] + normals[i+2] * normals[i+2]);
+        normals[i] /= length;
+        normals[i+1] /= length;
+        normals[i+2] /= length;
+      } */
+      // debugger;
+      // this.currentMesh.geometry.computeVertexNormals();
+
       const decimatedMesh = await this.decimateMesh(lod * meshBudget);
       decimatedMeshes.push(decimatedMesh);
     }
-    // this.meshes = decimatedMeshes;
 
-    console.log('got decimated meshes', decimatedMeshes);
+    // console.log('got decimated meshes', decimatedMeshes);
 
     this.reset();
     for (let i = 0; i < decimatedMeshes.length; i++) {
       const decimatedMesh = decimatedMeshes[i];
       this.mergeMeshGeometryScene(decimatedMesh, false, true);
-
-      const {packer} = decimatedMesh;
-      for (let j = 0; j < packer.images.length; j++) {
-        const {image, currentIds} = packer.images[j];
-        for (let k = 0; k < currentIds.length; k++) {
-          this.pushAtlasImage(image, currentIds[k]);
-        }
-      }
+    }
+    for (let i = 0; i < decimatedMeshPackers.length; i++) {
+      this.mergePacker(decimatedMeshPackers[i]);
     }
     this.repackTexture();
 
