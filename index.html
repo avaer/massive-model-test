@@ -266,9 +266,10 @@ let meshes = [];
     }
     return result;
   })(); */
+  const lod = 10000;
   for (let x = -1; x < 1; x++) {
     for (let z = -1; z < 1; z++) {
-      const mesh = await mesher.getChunk(x, z, 3000);
+      const mesh = await mesher.getChunk(x, z, lod);
       container.add(mesh);
       meshes.push(mesh);
     }
