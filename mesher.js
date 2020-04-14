@@ -273,7 +273,6 @@ class Mesher {
     const uvs = new Float32Array(currentMesh.geometry.attributes.uv.array.buffer, currentMesh.geometry.attributes.uv.array.byteOffset, currentMesh.geometry.drawRange.count*2);
     const ids = new Uint32Array(currentMesh.geometry.attributes.id.array.buffer, currentMesh.geometry.attributes.id.array.byteOffset, currentMesh.geometry.drawRange.count);
 
-    const arrayBuffer = new ArrayBuffer(2 * 1024 * 1024);
     const res = await worker.request({
       method: 'decimate',
       positions,
@@ -286,8 +285,7 @@ class Mesher {
       aggressiveness: 7,
       base: 0.000000001,
       iterationOffset: 3,
-      arrayBuffer,
-    }, [arrayBuffer]);
+    });
 
     currentMesh.geometry.setAttribute('position', new THREE.BufferAttribute(res.positions, 3));
     currentMesh.geometry.setAttribute('normal', new THREE.BufferAttribute(res.normals, 3));
