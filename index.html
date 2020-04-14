@@ -33,7 +33,7 @@ import {OrbitControls} from './OrbitControls.js';
 import {GLTFLoader} from './GLTFLoader.js';
 import {OBJLoader2} from './OBJLoader2.js';
 import {MTLLoader} from './MTLLoader.js';
-import {Mesher} from './mesher.js';
+import {Mesher, makeGlobalMaterial, makeTexture, CHUNK_SIZE} from './mesher.js';
 import modelFiles from './model-files.js';
 
 function makePromise() {
@@ -161,18 +161,12 @@ let meshes = [];
     // container.add(o.scene);
   } */
 
-  meshes = await mesher.getChunks(0.5);
-  // container.remove(mesher.currentMesh);
-  for (let i = 0; i < meshes.length; i++) {
-    const mesh = meshes[i];
-    container.add(mesh);
-  }
-
+  const _getMeshUrl = (x, z) => `/d/chunk:${x}:${z}.bin`;
   const _serializeMesh = async mesh => {
     const positions = mesh.geometry.attributes.position.array;
-    const normals = mesh.geometry.attributes.position.array;
-    const colors = mesh.geometry.attributes.position.array;
-    const uvs = mesh.geometry.attributes.position.array;
+    const normals = mesh.geometry.attributes.normal.array;
+    const colors = mesh.geometry.attributes.color.array;
+    const uvs = mesh.geometry.attributes.uv.array;
     const ids = mesh.geometry.attributes.id.array;
     const texData = await new Promise((accept, reject) => {
       mesh.material.map.image.toBlob(b => {
@@ -200,30 +194,102 @@ let meshes = [];
 
     let index = 0;
     const _set = o => {
+      new Uint32Array(arrayBuffer, index, 1)[0] = o.length;
+      index += Uint32Array.BYTES_PER_ELEMENT;
       new o.constructor(arrayBuffer, index, o.length).set(o);
-      index += o.constructor.BYTES_PER_ELEMENT;
+      index += o.length*o.constructor.BYTES_PER_ELEMENT;
     };
-    _set(Uint32Array.from([positions.length]));
     _set(positions);
-    _set(Uint32Array.from([normals.length]));
     _set(normals);
-    _set(Uint32Array.from([colors.length]));
     _set(colors);
-    _set(Uint32Array.from([uvs.length]));
     _set(uvs);
-    _set(Uint32Array.from([ids.length]));
     _set(ids);
-    _set(Uint32Array.from([texData.length]));
     _set(texData);
 
     return arrayBuffer;
   };
+  const _deserializeMesh = async arrayBuffer => {
+    let index = 0;
+    const _get = c => {
+      const count = new Uint32Array(arrayBuffer, index, 1)[0];
+      index += Uint32Array.BYTES_PER_ELEMENT;
+      const o = new c(arrayBuffer, index, count);
+      index += count*c.BYTES_PER_ELEMENT;
+      return o;
+    };
+    const positions = _get(Float32Array);
+    const normals = _get(Float32Array);
+    const colors = _get(Float32Array);
+    const uvs = _get(Float32Array);
+    const ids = _get(Uint32Array);
+    const texData = _get(Uint8Array);
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geometry.setAttribute('id', new THREE.BufferAttribute(ids, 1));
+
+    const material = makeGlobalMaterial();
+    const img = await new Promise((accept, reject) => {
+      const img = new Image();
+      const u = URL.createObjectURL(new Blob([texData], {
+        type: 'image/png',
+      }));
+      img.src = u;
+      img.onload = () => {
+        URL.revokeObjectURL(u);
+        accept(img);
+      };
+      img.onerror = err => {
+        URL.revokeObjectURL(u);
+        reject(err);
+      };
+    });
+    material.map = makeTexture(img);
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.frustumCulled = false;
+    return mesh;
+  };
+
+  /* meshes = await (async () => {
+    const result = [];
+    for (let x = -1; x < 1; x++) {
+      for (let z = -1; z < 1; z++) {
+        const res = await fetch(_getMeshUrl(x, z));
+        const arrayBuffer = await res.arrayBuffer();
+        const mesh = await _deserializeMesh(arrayBuffer);
+        meshes.push(mesh);
+      }
+    }
+    return result;
+  })(); */
+  meshes = await mesher.getChunks(0.5);
+  /* const _testMesh = async m => {
+    const ab = await _serializeMesh(m);
+    const m2 = await _deserializeMesh(ab);
+    m2.x = m.x;
+    m2.z = m.z;
+    return m2;
+  };
+  meshes = await Promise.all(meshes.map(m => _testMesh(m))); */
+  for (let i = 0; i < meshes.length; i++) {
+    const mesh = meshes[i];
+    container.add(mesh);
+  }
+
+  console.log('got meshes', meshes);
+
+  return;
+
   {
     for (let i = 0; i < meshes.length; i++) {
       const mesh = meshes[i];
       const body = await _serializeMesh(mesh);
       console.log('set body', mesh.x, mesh.z, body);
-      const res = await fetch(`/d/chunk:${mesh.x}:${mesh.z}.bin`, {
+      const res = await fetch(_getMeshUrl(x, z), {
         method: 'PUT',
         body,
       });

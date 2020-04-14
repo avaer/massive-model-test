@@ -5,6 +5,23 @@ const NUM_POSITIONS = 2 * 1024 * 1024;
 const TEXTURE_SIZE = 4*1024;
 const CHUNK_SIZE = 16;
 
+const makeGlobalMaterial = () => new THREE.MeshStandardMaterial({
+  map: null,
+  color: 0xFFFFFF,
+  vertexColors: true,
+  transparent: true,
+  alphaTest: 0.5,
+});
+const makeTexture = (i) => {
+  const t = new THREE.Texture(i);
+  t.generateMipmaps = false;
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; // THREE.RepeatWrapping;
+  t.minFilter = THREE.LinearFilter;
+  t.flipY = false;
+  t.needsUpdate = true;
+  return t;
+};
+
 const _makeWasmWorker = () => {
   let cbs = [];
   const w = new Worker('mc-worker.js');
@@ -75,13 +92,7 @@ class Mesher {
     geometry.setAttribute('id', idsAttribute);
     geometry.setDrawRange(0, 0);
 
-    this.globalMaterial = new THREE.MeshStandardMaterial({
-      map: null,
-      color: 0xFFFFFF,
-      vertexColors: true,
-      transparent: true,
-      alphaTest: 0.5,
-    });
+    this.globalMaterial = makeGlobalMaterial();
 
     const mesh = new THREE.Mesh(geometry, this.globalMaterial);
     mesh.frustumCulled = false;
@@ -356,12 +367,7 @@ class Mesher {
       currentMesh.geometry.attributes.uv.updateRange.offset = 0;
       currentMesh.geometry.attributes.uv.updateRange.count = -1;
       currentMesh.geometry.attributes.uv.needsUpdate = true;
-      globalMaterial.map = new THREE.Texture(canvas);
-      globalMaterial.map.generateMipmaps = false;
-      globalMaterial.map.wrapS = globalMaterial.map.wrapT = THREE.ClampToEdgeWrapping; // THREE.RepeatWrapping;
-      globalMaterial.map.minFilter = THREE.LinearFilter;
-      globalMaterial.map.flipY = false;
-      globalMaterial.map.needsUpdate = true;
+      globalMaterial.map = makeTexture(canvas);
       globalMaterial.needsUpdate = true;
     }
   }
@@ -536,4 +542,9 @@ class Mesher {
   }
 }
 
-export {Mesher};
+export {
+  Mesher,
+  makeGlobalMaterial,
+  makeTexture,
+  CHUNK_SIZE,
+};
