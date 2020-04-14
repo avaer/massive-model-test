@@ -266,7 +266,13 @@ let meshes = [];
     }
     return result;
   })(); */
-  meshes = await mesher.getChunks(0.5);
+  for (let x = -1; x < 1; x++) {
+    for (let z = -1; z < 1; z++) {
+      const mesh = await mesher.getChunk(x, z, 3000);
+      container.add(mesh);
+      meshes.push(mesh);
+    }
+  }
   /* const _testMesh = async m => {
     const ab = await _serializeMesh(m);
     const m2 = await _deserializeMesh(ab);
@@ -275,13 +281,6 @@ let meshes = [];
     return m2;
   };
   meshes = await Promise.all(meshes.map(m => _testMesh(m))); */
-  for (let i = 0; i < meshes.length; i++) {
-    const mesh = meshes[i];
-    container.add(mesh);
-  }
-
-  console.log('got meshes', meshes);
-
   return;
 
   {

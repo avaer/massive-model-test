@@ -162,6 +162,7 @@ class Mesher {
     const ids = idsAttribute.array;
 
     o.geometry.applyMatrix4(o.matrixWorld);
+    o.matrixWorld.identity();
     if (o.geometry.index) {
       o.geometry = o.geometry.toNonIndexed();
     }
@@ -263,7 +264,7 @@ class Mesher {
       }
     });
   }
-  async decimateMesh(factor) {
+  async decimateMesh(minTris) {
     const {currentMesh} = this;
 
     const positions = new Float32Array(currentMesh.geometry.attributes.position.array.buffer, currentMesh.geometry.attributes.position.array.byteOffset, currentMesh.geometry.drawRange.count*3);
@@ -280,7 +281,7 @@ class Mesher {
       colors,
       uvs,
       ids,
-      minTris: positions.length/9 * factor,
+      minTris: minTris === Infinity ? positions.length/9 : minTris,
       // minTris: positions.length/9,
       aggressiveness: 7,
       base: 0.000000001,
@@ -418,24 +419,22 @@ class Mesher {
 
     return mesh;
   }
-  async getChunks() {
-    const {currentMesh, packer, globalMaterial} = this;
-
+  getMeshesInChunk(x, z) {
+    x += CHUNK_SIZE/2;
+    z += CHUNK_SIZE/2;
+    return this.meshes.filter(m => m.aabb.min.x <= x && m.aabb.max.x >= x && m.aabb.min.z <= z && m.aabb.max.z >= z);
+  }
+  getMeshBudgets(meshes) {
     let chunkWeights = {};
-    const _getMeshesInChunk = (x, z) => {
-      x += CHUNK_SIZE/2;
-      z += CHUNK_SIZE/2;
-      return this.meshes.filter(m => m.aabb.min.x <= x && m.aabb.max.x >= x && m.aabb.min.z <= z && m.aabb.max.z >= z);
-    };
     for (let x = this.aabb.min.x; x < this.aabb.max.x; x += CHUNK_SIZE) {
       for (let z = this.aabb.min.z; z < this.aabb.max.z; z += CHUNK_SIZE) {
         const k = x + ':' + z;
         if (chunkWeights[k] === undefined) {
-          chunkWeights[k] = _getMeshesInChunk(x, z).length;
+          chunkWeights[k] = this.getMeshesInChunk(x, z).length;
         }
       }
     }
-    const meshBudgets = this.meshes.map(m => {
+    return meshes.map(m => {
       let budget = 0;
       for (let x = m.aabb.min.x; x < m.aabb.max.x; x += CHUNK_SIZE) {
         for (let z = m.aabb.min.z; z < m.aabb.max.z; z += CHUNK_SIZE) {
@@ -445,100 +444,47 @@ class Mesher {
       }
       return budget;
     });
-    // console.log('got mesh budgets', meshBudgets);
-    /* const extents = [];
-    let seenIndices = {};
-    const _getMeshesInChunk = (x, z) => {
-      const chunkBox = new THREE.Box3(
-        new THREE.Vector3(x, 0, z),
-        new THREE.Vector3(x+1, 0, z+1)
-      );
-      return this.meshes.filter(m => m.aabb.intersectsBox(chunkBox));
-    };
-    for (let x = Math.floor(this.aabb.min.x); x < Math.ceil(this.aabb.max.x); x++) {
-      for (let z = Math.floor(this.aabb.min.z); z < Math.ceil(this.aabb.max.z); z++) {
-        const k = x + ':' + z;
-        if (!seenIndices[k]) {
-          const queue = _getMeshesInChunk(x, z);
-          const closure = [];
-          const closureChunks = [{x, z}];
-          while (queue.length > 0) {
-            const mesh = queue.pop();
-            closure.push(mesh);
-            for (let x = Math.floor(mesh.aabb.min.x); x < Math.ceil(mesh.aabb.max.x); x++) {
-              for (let z = Math.floor(mesh.aabb.min.z); z < Math.ceil(mesh.aabb.max.z); z++) {
-                const k = x + ':' + z;
-                if (!seenIndices[k]) {
-                  const meshes = _getMeshesInChunk(x, z);
-                  if (meshes.length > 0) {
-                    queue.push.apply(queue, meshes);
-                    closureChunks.push({x, z});
-                  }
-                  seenIndices[k] = true;
-                }
-              }
-            }
-          }
-          if (closure.length > 0) {
-            extents.push({
-              meshes: closure,
-              chunks: closureChunks,
-            });
-          }
+  }
+  async getChunk(x, z, lod) {
+    const {currentMesh, packer, globalMaterial} = this;
 
-          seenIndices[k] = true;
-        }
-      }
-    } */
-    console.log('got mesh budgets', meshBudgets.slice(0, 10));
+    x *= CHUNK_SIZE;
+    z *= CHUNK_SIZE;
+
+    const meshes = this.getMeshesInChunk(x, z);
+    const meshBudgets = this.getMeshBudgets(meshes);
+    console.log('got mesh budgets', meshBudgets);
 
     const decimatedMeshes = [];
-    for (let i = 0; i < this.meshes.length; i++) {
-      const mesh = this.meshes[i];
+    for (let i = 0; i < meshes.length; i++) {
+      const mesh = meshes[i];
+      const meshBudget = meshBudgets[i];
       this.reset();
       this.mergeMeshGeometryScene(mesh, true, false);
-      const decimatedMesh = await this.decimateMesh(0.5);
+      const decimatedMesh = await this.decimateMesh(lod * meshBudget);
       decimatedMeshes.push(decimatedMesh);
     }
-    this.meshes = decimatedMeshes;
+    // this.meshes = decimatedMeshes;
 
     console.log('got decimated meshes', decimatedMeshes);
-    // debugger;
-    // return this.meshes;
 
-    const chunkMeshes = [];
-    for (let x = this.aabb.min.x; x < this.aabb.max.x; x += CHUNK_SIZE) {
-      for (let z = this.aabb.min.z; z < this.aabb.max.z; z += CHUNK_SIZE) {
-        console.log('chunk', x, z);
-        const meshes = _getMeshesInChunk(x, z);
-        if (meshes.length > 0) {
-          this.reset();
+    this.reset();
+    for (let i = 0; i < decimatedMeshes.length; i++) {
+      const decimatedMesh = decimatedMeshes[i];
+      this.mergeMeshGeometryScene(decimatedMesh, false, true);
 
-          for (let i = 0; i < meshes.length; i++) {
-            const mesh = meshes[i];
-
-            this.mergeMeshGeometryScene(mesh, false, true);
-
-            const {packer} = mesh;
-            for (let j = 0; j < packer.images.length; j++) {
-              const {image, currentIds} = packer.images[j];
-              for (let k = 0; k < currentIds.length; k++) {
-                this.pushAtlasImage(image, currentIds[k]);
-              }
-            }
-          }
-          this.repackTexture();
-          const chunkMesh = await this.chunkMesh(x, z);
-          chunkMeshes.push(chunkMesh);
+      const {packer} = decimatedMesh;
+      for (let j = 0; j < packer.images.length; j++) {
+        const {image, currentIds} = packer.images[j];
+        for (let k = 0; k < currentIds.length; k++) {
+          this.pushAtlasImage(image, currentIds[k]);
         }
       }
     }
-    this.meshes = chunkMeshes;
+    this.repackTexture();
 
-    console.log('got chunk meshes', chunkMeshes);
-    // document.body.appendChild(chunkMeshes[0].material.map.image);
-
-    return this.meshes;
+    const chunkMesh = await this.chunkMesh(x, z);
+    return chunkMesh;
   }
 }
 
