@@ -246,14 +246,14 @@ class Mesher {
       this.currentId++;
     }
 
-    positionsAttribute.needsUpdate = true;
+    /* positionsAttribute.needsUpdate = true;
     this.renderer.attributes.update(positionsAttribute, 34962);
     normalsAttribute.needsUpdate = true;
     this.renderer.attributes.update(normalsAttribute, 34962);
     colorsAttribute.needsUpdate = true;
     this.renderer.attributes.update(colorsAttribute, 34962);
     uvsAttribute.needsUpdate = true;
-    this.renderer.attributes.update(uvsAttribute, 34962);
+    this.renderer.attributes.update(uvsAttribute, 34962); */
     geometry.setDrawRange(0, this.positionsIndex/3);
   }
   mergeMeshGeometryScene(o, mergeMaterial, forceUvs) {
