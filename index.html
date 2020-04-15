@@ -150,7 +150,7 @@ let meshes = [];
 
   {
     const p = makePromise();
-    new GLTFLoader(manager).load('models/model.gltf', p.accept, function onProgress() {}, p.reject);
+    new LegacyGLTFLoader(manager).load('models/desert/sketch.gltf', p.accept, function onProgress() {}, p.reject);
     const o = await p;
     mesher.addMesh(o.scene);
   }
