@@ -21,10 +21,11 @@ const makeTexture = (i) => {
   t.needsUpdate = true;
   return t;
 };
-
 const _makeWasmWorker = () => {
   let cbs = [];
-  const w = new Worker('mc-worker.js');
+  const w = new Worker('mc-worker.js', {
+    type: 'module',
+  });
   w.onmessage = e => {
     const {data} = e;
     const {error, result} = data;
@@ -46,11 +47,12 @@ const _makeWasmWorker = () => {
   });
   return w;
 };
-const worker = _makeWasmWorker();
 
 class Mesher {
   constructor(renderer) {
     this.renderer = renderer;
+
+    this.worker = _makeWasmWorker();
 
     this.positionsIndex = 0;
     this.normalsIndex = 0;
@@ -339,7 +341,7 @@ class Mesher {
 
     const {arrayBuffer} = this;
     this.arrayBuffer = null;
-    const res = await worker.request({
+    const res = await this.worker.request({
       method: 'decimate',
       positions,
       normals,
@@ -459,7 +461,7 @@ class Mesher {
     const maxs = [x+CHUNK_SIZE, 0, z+CHUNK_SIZE];
     const {arrayBuffer} = this;
     this.arrayBuffer = null;
-    const res = await worker.request({
+    const res = await this.worker.request({
       method: 'chunkOne',
       positions,
       normals,
@@ -600,8 +602,15 @@ class Mesher {
   }
 }
 
+class MesherServer {
+  cosntructor() {
+
+  }
+}
+
 export {
   Mesher,
+  MesherServer,
   makeGlobalMaterial,
   makeTexture,
   CHUNK_SIZE,

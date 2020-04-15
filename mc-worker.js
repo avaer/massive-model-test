@@ -1,6 +1,5 @@
-const width = 10;
-const height = 10;
-const depth = 10;
+import {MesherServer} from './mesher.js';
+
 // let noiserOffset = 0;
 self.wasmModule = (moduleName, moduleFn) => {
   // console.log('wasm module', moduleName, moduleFn);
@@ -26,7 +25,13 @@ self.wasmModule = (moduleName, moduleFn) => {
     console.warn('unknown wasm module', moduleName);
   }
 };
-importScripts('bin/mc.js');
+import('./bin/mc.js')
+  .then(() => {
+    console.log('loaded wasm');
+  })
+  .catch(err => {
+    console.warn(err.stack);
+  });
 
 class Allocator {
   constructor() {
