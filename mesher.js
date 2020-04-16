@@ -1,16 +1,125 @@
 import THREE from './three.module.js';
 import maxrects from './maxrects-packer.min.js';
+import {XRRaycaster} from './spatial-engine.js';
 
 const NUM_POSITIONS = 8 * 1024 * 1024;
 const TEXTURE_SIZE = 4*1024;
 const CHUNK_SIZE = 16;
 
+const localColor = new THREE.Color();
+const localColor2 = new THREE.Color();
+
+function mod(a, n) {
+  return ((a%n)+n)%n;
+}
+
+let voxelWidth = 0;
+let voxelSize = 0;
+let voxelResolution = 0;
+let canvas = null;
+let renderer = null;
+let xrRaycaster = null;
+let scene = new THREE.Scene();
+const depthMaterial = (() => {
+  const depthVsh = `
+    // uniform float uAnimation;
+    // attribute float typex;
+    // varying vec3 vPosition;
+    void main() {
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.);
+    }
+  `;
+  const depthFsh = `
+    uniform float uNear;
+    uniform float uFar;
+    /* vec4 encodePixelDepth( float v ) {
+      vec4 enc = vec4(1.0, 255.0, 65025.0, 16581375.0) * v;
+      enc = fract(enc);
+      // enc -= enc.xyzw * vec4(1.0/255.0,1.0/255.0,1.0/255.0,1.0/255.0);
+      return enc;
+    } */
+    // const float infinity = 1./0.;
+    vec4 encodePixelDepth( float v ) {
+      float x = fract(v);
+      v -= x;
+      v /= 255.0;
+      float y = fract(v);
+      v -= y;
+      v /= 255.0;
+      float z = fract(v);
+      /* v -= y;
+      v /= 255.0;
+      float w = fract(v);
+      float w = 0.0;
+      if (x == 0.0 && y == 0.0 && z == 0.0 && w == 0.0) {
+        return vec4(0.0, 0.0, 0.0, 1.0);
+      } else { */
+        return vec4(x, y, z, 0.0);
+      // }
+    }
+    void main() {
+      float originalZ = uNear + gl_FragCoord.z / gl_FragCoord.w * (uFar - uNear);
+      gl_FragColor = encodePixelDepth(originalZ);
+    }
+  `;
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uNear: {
+        type: 'f',
+        value: 0,
+      },
+      uFar: {
+        type: 'f',
+        value: 0,
+      },
+    },
+    vertexShader: depthVsh,
+    fragmentShader: depthFsh,
+    // transparent: true,
+  });
+})();
+const raycasterCamera = new THREE.PerspectiveCamera();
+const _renderRaycaster = ({target, near, far, matrixWorld, projectionMatrix}) => {
+  raycasterCamera.near = near;
+  raycasterCamera.far = far;
+  raycasterCamera.matrixWorld.fromArray(matrixWorld).decompose(raycasterCamera.position, raycasterCamera.quaternion, raycasterCamera.scale);
+  raycasterCamera.projectionMatrix.fromArray(projectionMatrix);
+  depthMaterial.uniforms.uNear.value = near;
+  depthMaterial.uniforms.uFar.value = far;
+
+  // console.log('render', target, near, far, matrixWorld, projectionMatrix);
+
+  {
+    // const unhideUiMeshes = _hideUiMeshes();
+
+    scene.overrideMaterial = depthMaterial;
+    // const oldVrEnabled = renderer.vr.enabled;
+    // renderer.vr.enabled = false;
+    // const oldClearColor = localColor.copy(renderer.getClearColor());
+    // const oldClearAlpha = renderer.getClearAlpha();
+    renderer.setClearColor(localColor2.setRGB(0, 0, 0), 1);
+    renderer.setRenderTarget(target);
+
+    renderer.render(scene, raycasterCamera);
+
+    scene.overrideMaterial = null;
+    // renderer.vr.enabled = oldVrEnabled;
+    // renderer.setClearColor(oldClearColor, oldClearAlpha);
+
+    // unhideUiMeshes();
+
+    renderer.setRenderTarget(null);
+  }
+};
+
+
+
 const makeGlobalMaterial = () => new THREE.MeshStandardMaterial({
   map: null,
   color: 0xFFFFFF,
   vertexColors: true,
-  transparent: true,
-  alphaTest: 0.5,
+  // transparent: true,
+  // alphaTest: 0.5,
 });
 const makeTexture = (i) => {
   const t = new THREE.Texture(i);
@@ -22,6 +131,7 @@ const makeTexture = (i) => {
   return t;
 };
 const _makeWasmWorker = () => {
+  console.log('make wasm worker');
   let cbs = [];
   const w = new Worker('mc-worker.js', {
     type: 'module',
@@ -48,6 +158,25 @@ const _makeWasmWorker = () => {
   return w;
 };
 
+class Allocator {
+  constructor() {
+    this.offsets = [];
+  }
+  alloc(constructor, size) {
+    const offset = self.Module._doMalloc(size * constructor.BYTES_PER_ELEMENT);
+    const b = new constructor(self.Module.HEAP8.buffer, self.Module.HEAP8.byteOffset + offset, size);
+    b.offset = offset;
+    this.offsets.push(offset);
+    return b;
+  }
+  freeAll() {
+    for (let i = 0; i < this.offsets.length; i++) {
+      self.Module._doFree(this.offsets[i]);
+    }
+    this.offsets.length = 0;
+  }
+}
+
 class Mesher {
   constructor(renderer) {
     this.renderer = renderer;
@@ -67,6 +196,8 @@ class Mesher {
     this.aabb = new THREE.Box3();
     this.arrayBuffer = null;
     this.arrayBuffers = [];
+
+    this.dbpCache = {};
 
     this.reset();
   }
@@ -330,49 +461,63 @@ class Mesher {
       return [this.currentMesh];
     }
   }
-  async decimateMesh(minTris) {
+  async decimateMesh(x, z, minTris) {
     const {currentMesh} = this;
 
     const positions = new Float32Array(currentMesh.geometry.attributes.position.array.buffer, currentMesh.geometry.attributes.position.array.byteOffset, currentMesh.geometry.drawRange.count*3);
-    const normals = new Float32Array(currentMesh.geometry.attributes.normal.array.buffer, currentMesh.geometry.attributes.normal.array.byteOffset, currentMesh.geometry.drawRange.count*3);
-    const colors = new Float32Array(currentMesh.geometry.attributes.color.array.buffer, currentMesh.geometry.attributes.color.array.byteOffset, currentMesh.geometry.drawRange.count*3);
-    const uvs = new Float32Array(currentMesh.geometry.attributes.uv.array.buffer, currentMesh.geometry.attributes.uv.array.byteOffset, currentMesh.geometry.drawRange.count*2);
-    const ids = new Uint32Array(currentMesh.geometry.attributes.id.array.buffer, currentMesh.geometry.attributes.id.array.byteOffset, currentMesh.geometry.drawRange.count);
-
-    const {arrayBuffer} = this;
-    this.arrayBuffer = null;
-    const res = await this.worker.request({
-      method: 'decimate',
-      positions,
-      normals,
-      colors,
-      uvs,
-      ids,
-      // minTris: minTris === Infinity ? positions.length/9 : minTris,
-      minTris: positions.length/9 * 0.5,
-      // minTris: positions.length/9,
-      quantization: 0.1,
-      targetError: 0.1,
-      aggressiveness: 7,
-      base: 0.000000001,
-      iterationOffset: 3,
-      arrayBuffer,
-    }, [arrayBuffer]);
-    this.arrayBuffers.push(res.arrayBuffer);
-
-    currentMesh.geometry.setAttribute('position', new THREE.BufferAttribute(res.positions, 3));
-    currentMesh.geometry.setAttribute('normal', new THREE.BufferAttribute(res.normals, 3));
-    currentMesh.geometry.setAttribute('color', new THREE.BufferAttribute(res.colors, 3));
-    currentMesh.geometry.setAttribute('uv', new THREE.BufferAttribute(res.uvs, 2));
-    currentMesh.geometry.setAttribute('id', new THREE.BufferAttribute(res.ids, 1));
-    currentMesh.geometry.setIndex(new THREE.BufferAttribute(res.indices, 1));
-    currentMesh.geometry.setDrawRange(0, Infinity);
 
     currentMesh.aabb = new THREE.Box3().setFromObject(currentMesh);
     currentMesh.aabb.min.x = Math.floor(currentMesh.aabb.min.x/CHUNK_SIZE)*CHUNK_SIZE;
     currentMesh.aabb.max.x = Math.ceil(currentMesh.aabb.max.x/CHUNK_SIZE)*CHUNK_SIZE;
     currentMesh.aabb.min.z = Math.floor(currentMesh.aabb.min.z/CHUNK_SIZE)*CHUNK_SIZE;
     currentMesh.aabb.max.z = Math.ceil(currentMesh.aabb.max.z/CHUNK_SIZE)*CHUNK_SIZE;
+
+    const {arrayBuffer} = this;
+    this.arrayBuffer = null;
+    /* const shift = currentMesh.aabb.min.clone();
+    const size = currentMesh.aabb.getSize(new THREE.Vector3());
+    const sizeVector = Math.max(size.x, size.y, size.z);
+    size.set(sizeVector, sizeVector, sizeVector); */
+    const res = await this.worker.request({
+      method: 'decimateMarch',
+      positions,
+      arrayBuffer,
+      dims: [200, 200, 200],
+      shift: [x, -8, z],
+      size: [16, 16, 16],
+    }, [arrayBuffer]);
+    this.arrayBuffers.push(res.arrayBuffer);
+
+    /* currentMesh.position.x = x;
+    currentMesh.position.y = -8;
+    currentMesh.position.z = z;
+    currentMesh.updateMatrixWorld(); */
+    /* currentMesh.position.copy(currentMesh.aabb.min);
+    currentMesh.scale.copy(size);
+    currentMesh.updateMatrixWorld(); */
+
+    currentMesh.geometry.setAttribute('position', new THREE.BufferAttribute(res.positions, 3));
+    currentMesh.geometry.deleteAttribute('normal', undefined);
+    const c = new THREE.Color(Math.random(), Math.random(), Math.random());
+    const cs = new Float32Array(res.positions.length);
+    for (let i = 0; i < res.positions.length; i += 3) {
+      cs[i] = c.r;
+      cs[i+1] = c.g;
+      cs[i+2] = c.b;
+    }
+    currentMesh.geometry.setAttribute('color', new THREE.BufferAttribute(cs, 3));
+    currentMesh.geometry.deleteAttribute('uv', undefined);
+    currentMesh.geometry.deleteAttribute('id', undefined);
+    currentMesh.geometry.setIndex(new THREE.BufferAttribute(res.indices, 1));
+    currentMesh.geometry = currentMesh.geometry.toNonIndexed();
+    currentMesh.geometry.computeVertexNormals();
+    currentMesh.geometry.setDrawRange(0, Infinity);
+
+    /* currentMesh.aabb = new THREE.Box3().setFromObject(currentMesh);
+    currentMesh.aabb.min.x = Math.floor(currentMesh.aabb.min.x/CHUNK_SIZE)*CHUNK_SIZE;
+    currentMesh.aabb.max.x = Math.ceil(currentMesh.aabb.max.x/CHUNK_SIZE)*CHUNK_SIZE;
+    currentMesh.aabb.min.z = Math.floor(currentMesh.aabb.min.z/CHUNK_SIZE)*CHUNK_SIZE;
+    currentMesh.aabb.max.z = Math.ceil(currentMesh.aabb.max.z/CHUNK_SIZE)*CHUNK_SIZE; */
     currentMesh.packer = this.packer;
 
     currentMesh.x = 0;
@@ -518,26 +663,173 @@ class Mesher {
       return budget;
     });
   }
-  async getChunk(x, z, lod) {
+  initVoxelize(newWidth, newSize) {
+    voxelWidth = newWidth;
+    voxelSize = newSize;
+    voxelResolution = voxelSize / voxelWidth;
+    canvas = new OffscreenCanvas(voxelWidth, voxelWidth);
+    renderer = new THREE.WebGLRenderer({
+      canvas,
+    });
+    // document.body.appendChild(renderer.domElement);
+    xrRaycaster = new XRRaycaster({
+      width: voxelWidth,
+      height: voxelWidth,
+      cameraWidth: voxelSize,
+      cameraHeight: voxelSize,
+      near: 0.001,
+      far: voxelResolution,
+      renderer,
+      onRender: _renderRaycaster,
+    });
+  }
+  getDepthBufferPixels(x, y, z) {
+    x = Math.floor(x/voxelWidth);
+    y = Math.floor(y/voxelWidth);
+    z = Math.floor(z/voxelWidth);
+
+    const k = x + ':' + y + ':' + z;
+    const depthBufferPixels = this.dbpCache[k];
+    if (depthBufferPixels) {
+      return depthBufferPixels;
+    } else {
+      x = x * voxelSize + voxelSize/2;
+      y = y * voxelSize + voxelSize/2;
+      z = z * voxelSize;
+
+      const dbp = new Float32Array(voxelWidth*voxelWidth*voxelWidth);
+      const start = Date.now();
+      for (let dz = 0; dz < voxelWidth; dz++, z += voxelResolution) {
+        // console.log('chunk query', v.toArray().join(','));
+        xrRaycaster.updateView(x, y, z);
+        xrRaycaster.updateTexture();
+        // await XRRaycaster.nextFrame();
+        xrRaycaster.updateDepthBuffer();
+        xrRaycaster.updateDepthBufferPixels();
+        const depthBufferPixels = xrRaycaster.getDepthBufferPixels();
+        dbp.set(depthBufferPixels, dz*voxelWidth*voxelWidth);
+        // depthBufferPixels = depthBufferPixels.slice();
+        // console.log('got depth buffer pixels', depthBufferPixels);
+        // xrRaycaster.updatePointCloudBuffer();
+      }
+      const end = Date.now();
+      console.log('got k', k, x, y, z, end - start);
+      this.dbpCache[k] = dbp;
+      return dbp;
+    }
+  }
+  async voxelize(x, y, z, meshes) {
+    console.log('got meshes', meshes);
+    meshes.forEach(m => {
+      m.traverse(o => {
+        if (o.isMesh) {
+          o.frustumCulled = false;
+        }
+      });
+      scene.add(m);
+    });
+
+    const voxelWidthP2 = voxelWidth + 2;
+    const potentials = new Float32Array(voxelWidthP2 * voxelWidthP2 * voxelWidthP2);
+    potentials.fill(0.15);
+
+    // const v = new THREE.Vector3(x + voxelSize/2, y + voxelSize/2, z + voxelSize/2);
+    // const originalZ = z;
+
+    x *= voxelWidth;
+    y *= voxelWidth;
+    z *= voxelWidth;
+
+    console.log('vox 1');
+    // const maxDistance = Math.sqrt(3);
+    for (let iz = 0; iz < voxelWidthP2; iz++) {
+      for (let ix = 0; ix < voxelWidthP2; ix++) {
+        for (let iy = 0; iy < voxelWidthP2; iy++) {
+          const ax = x + ix - 1;
+          const ay = y + iy - 1;
+          const az = z + iz - 1;
+          const depthBufferPixels = this.getDepthBufferPixels(ax, ay, az);
+          const nx = mod(ax, voxelWidth);
+          const ny = mod(ay, voxelWidth);
+          const nz = mod(az, voxelWidth);
+          if (depthBufferPixels[nx + ny*voxelWidth + nz*voxelWidth*voxelWidth] < Infinity) {
+            const index = ix + iy*voxelWidthP2*voxelWidthP2 + iz*voxelWidthP2;
+            potentials[index] = -1;
+          }
+        }
+      }
+    }
+    console.log('vox 2');
+
+    this.reset();
+
+    const {arrayBuffer} = this;
+    this.arrayBuffer = null;
+    const res = await this.worker.request({
+      method: 'marchPotentials',
+      potentials,
+      arrayBuffer,
+      dims: [voxelWidthP2, voxelWidthP2, voxelWidthP2],
+      shift: [-voxelResolution + x/voxelWidth*voxelSize, -voxelResolution + y/voxelWidth*voxelSize, -voxelResolution + z/voxelWidth*voxelSize],
+      size: [voxelSize + 2*voxelResolution, voxelSize + 2*voxelResolution, voxelSize + 2*voxelResolution],
+    }, [arrayBuffer]);
+    console.log('got res', res);
+    this.arrayBuffers.push(res.arrayBuffer);
+
+    const {currentMesh} = this;
+    currentMesh.geometry.setAttribute('position', new THREE.BufferAttribute(res.positions, 3));
+    currentMesh.geometry.deleteAttribute('normal', undefined);
+    const c = new THREE.Color(Math.random(), Math.random(), Math.random());
+    const cs = new Float32Array(res.positions.length);
+    for (let i = 0; i < res.positions.length; i += 3) {
+      cs[i] = c.r;
+      cs[i+1] = c.g;
+      cs[i+2] = c.b;
+    }
+    currentMesh.geometry.setAttribute('color', new THREE.BufferAttribute(cs, 3));
+    currentMesh.geometry.deleteAttribute('uv', undefined);
+    currentMesh.geometry.deleteAttribute('id', undefined);
+    currentMesh.geometry.setIndex(new THREE.BufferAttribute(res.indices, 1));
+    currentMesh.geometry = currentMesh.geometry.toNonIndexed();
+    currentMesh.geometry.computeVertexNormals();
+    currentMesh.geometry.setDrawRange(0, Infinity);
+
+    /* currentMesh.aabb = new THREE.Box3().setFromObject(currentMesh);
+    currentMesh.aabb.min.x = Math.floor(currentMesh.aabb.min.x/CHUNK_SIZE)*CHUNK_SIZE;
+    currentMesh.aabb.max.x = Math.ceil(currentMesh.aabb.max.x/CHUNK_SIZE)*CHUNK_SIZE;
+    currentMesh.aabb.min.z = Math.floor(currentMesh.aabb.min.z/CHUNK_SIZE)*CHUNK_SIZE;
+    currentMesh.aabb.max.z = Math.ceil(currentMesh.aabb.max.z/CHUNK_SIZE)*CHUNK_SIZE; */
+    currentMesh.packer = this.packer;
+
+    currentMesh.x = 0;
+    currentMesh.z = 0;
+
+    return currentMesh;
+  }
+  async getChunk(x, y, z, lod) {
     const {currentMesh, packer, globalMaterial} = this;
 
-    x *= CHUNK_SIZE;
-    z *= CHUNK_SIZE;
+    /* x *= voxelSize;
+    y *= voxelSize;
+    z *= voxelSize; */
 
     // XXX break up large meshes
 
     const meshes = this.getMeshesInChunk(x, z);
+    return this.voxelize(x, y, z, meshes);
+
     const meshBudgets = this.getMeshBudgets(meshes);
+
+    this.reset();
 
     const decimatedMeshes = [];
     const decimatedMeshPackers = [];
     for (let i = 0; i < meshes.length; i++) {
       const mesh = meshes[i];
-      const meshBudget = meshBudgets[i];
+      // const meshBudget = meshBudgets[i];
 
-      this.reset();
       this.mergeMeshGeometryScene(mesh, true, false);
-      decimatedMeshPackers.push(this.packer);
+      // decimatedMeshPackers.push(this.packer);
 
       /* for (let i = 0; i < this.currentMesh.geometry.attributes.position.array.length; i++) {
         this.currentMesh.geometry.attributes.position.array[i] = Math.floor(this.currentMesh.geometry.attributes.position.array[i]/0.05)*0.05;
@@ -580,12 +872,10 @@ class Mesher {
       } */
       // debugger;
       // this.currentMesh.geometry.computeVertexNormals();
-
-      const decimatedMesh = await this.decimateMesh(lod * meshBudget);
-      decimatedMeshes.push(decimatedMesh);
     }
 
-    // console.log('got decimated meshes', decimatedMeshes);
+    const decimatedMesh = await this.decimateMesh(x, z, lod);
+    return decimatedMesh;
 
     this.reset();
     for (let i = 0; i < decimatedMeshes.length; i++) {
@@ -603,9 +893,578 @@ class Mesher {
 }
 
 class MesherServer {
-  cosntructor() {
+  // constructor() {}
+  handleMessage(data) {
+    const {method} = data;
+    switch (method) {
+      case 'chunk': {
+        const allocator = new Allocator();
 
-  }
+        const {positions: positionsData, normals: normalsData, colors: colorsData, uvs: uvsData, ids: idsData, indices: indicesData, mins: minsData, maxs: maxsData, scales: scaleData, arrayBuffer} = data;
+        const positions = allocator.alloc(Float32Array, positionsData.length);
+        positions.set(positionsData);
+        const normals = allocator.alloc(Float32Array, normalsData.length);
+        normals.set(normalsData);
+        const colors = allocator.alloc(Float32Array, colorsData.length);
+        colors.set(colorsData);
+        const uvs = allocator.alloc(Float32Array, uvsData.length);
+        uvs.set(uvsData);
+        const ids = allocator.alloc(Float32Array, idsData.length);
+        ids.set(idsData);
+        const indices = allocator.alloc(Uint32Array, indicesData.length);
+        indices.set(indicesData);
+
+        const mins = allocator.alloc(Float32Array, 3);
+        mins[0] = minsData[0];
+        mins[1] = minsData[1];
+        mins[2] = minsData[2];
+        const maxs = allocator.alloc(Float32Array, 3);
+        maxs[0] = maxsData[0];
+        maxs[1] = maxsData[1];
+        maxs[2] = maxsData[2];
+        const scale = allocator.alloc(Float32Array, 3);
+        scale[0] = scaleData[0];
+        scale[1] = scaleData[1];
+        scale[2] = scaleData[2];
+
+        const numSlots = Math.floor((maxs[0]-mins[0]) / scale[0]) * Math.floor((maxs[2]-mins[2]) / scale[2]);
+        const outPositions = allocator.alloc(Uint32Array, numSlots);
+        const outNormals = allocator.alloc(Uint32Array, numSlots);
+        const outColors = allocator.alloc(Uint32Array, numSlots);
+        const outUvs = allocator.alloc(Uint32Array, numSlots);
+        const outIds = allocator.alloc(Uint32Array, numSlots);
+        const outFaces = allocator.alloc(Uint32Array, numSlots);
+        for (let i = 0; i < numSlots; i++) {
+          outPositions[i] = allocator.alloc(Float32Array, 500*1024).offset;
+          outNormals[i] = allocator.alloc(Float32Array, 500*1024).offset;
+          outColors[i] = allocator.alloc(Float32Array, 500*1024).offset;
+          outUvs[i] = allocator.alloc(Float32Array, 500*1024).offset;
+          outIds[i] = allocator.alloc(Uint32Array, 500*1024).offset;
+          outFaces[i] = allocator.alloc(Uint32Array, 500*1024).offset;
+        }
+        const outNumPositions = allocator.alloc(Uint32Array, numSlots);
+        const outNumNormals = allocator.alloc(Uint32Array, numSlots);
+        const outNumColors = allocator.alloc(Uint32Array, numSlots);
+        const outNumUvs = allocator.alloc(Uint32Array, numSlots);
+        const outNumIds = allocator.alloc(Uint32Array, numSlots);
+        const outNumFaces = allocator.alloc(Uint32Array, numSlots);
+
+        self.Module._doChunk(
+          positions.offset,
+          positions.length,
+          normals.offset,
+          normals.length,
+          colors.offset,
+          colors.length,
+          uvs.offset,
+          uvs.length,
+          ids.offset,
+          ids.length,
+          indices.offset,
+          indices.length,
+          mins.offset,
+          maxs.offset,
+          scale.offset,
+          outPositions.offset,
+          outNumPositions.offset,
+          outNormals.offset,
+          outNumNormals.offset,
+          outColors.offset,
+          outNumColors.offset,
+          outUvs.offset,
+          outNumUvs.offset,
+          outIds.offset,
+          outNumIds.offset,
+          outFaces.offset,
+          outNumFaces.offset
+        );
+
+        let index = 0;
+        const outPs = Array(numSlots);
+        const outNs = Array(numSlots);
+        const outCs = Array(numSlots);
+        const outUs = Array(numSlots);
+        const outXs = Array(numSlots);
+        const outIs = Array(numSlots);
+        for (let i = 0; i < numSlots; i++) {
+          const numP = outNumPositions[i];
+          const outP = new Float32Array(self.Module.HEAP8.buffer, self.Module.HEAP8.byteOffset + outPositions[i], numP);
+          new Float32Array(arrayBuffer, index, numP).set(outP);
+          outPs[i] = outP;
+          index += Float32Array.BYTES_PER_ELEMENT * numP;
+
+          const numN = outNumNormals[i];
+          const outN = new Float32Array(self.Module.HEAP8.buffer, self.Module.HEAP8.byteOffset + outNormals[i], numN);
+          new Float32Array(arrayBuffer, index, numN).set(outN);
+          outNs[i] = outN;
+          index += Float32Array.BYTES_PER_ELEMENT * numN;
+
+          const numC = outNumColors[i];
+          const outC = new Float32Array(self.Module.HEAP8.buffer, self.Module.HEAP8.byteOffset + outColors[i], numC);
+          new Float32Array(arrayBuffer, index, numC).set(outC);
+          outCs[i] = outC;
+          index += Float32Array.BYTES_PER_ELEMENT * numC;
+
+          const numU = outNumUvs[i];
+          const outU = new Float32Array(self.Module.HEAP8.buffer, self.Module.HEAP8.byteOffset + outUvs[i], numU);
+          new Float32Array(arrayBuffer, index, numU).set(outU);
+          outUs[i] = outU;
+          index += Float32Array.BYTES_PER_ELEMENT * numU;
+
+          const numX = outNumIds[i];
+          const outX = new Float32Array(self.Module.HEAP8.buffer, self.Module.HEAP8.byteOffset + outIds[i], numX);
+          new Float32Array(arrayBuffer, index, numX).set(outX);
+          outXs[i] = outX;
+          index += Float32Array.BYTES_PER_ELEMENT * numX;
+
+          const numI = outNumFaces[i];
+          const outI = new Uint32Array(self.Module.HEAP8.buffer, self.Module.HEAP8.byteOffset + outFaces[i], numI);
+          new Uint32Array(arrayBuffer, index, numI).set(outI);
+          outIs[i] = outI;
+          index += Uint32Array.BYTES_PER_ELEMENT * numI;
+        }
+
+        self.postMessage({
+          result: {
+            positions: outPs,
+            normals: outNs,
+            colors: outCs,
+            uvs: outUs,
+            ids: outXs,
+            indices: outIs,
+            arrayBuffer,
+          },
+        }, [arrayBuffer]);
+        allocator.freeAll();
+        break;
+      }
+      case 'chunkOne': {
+        const allocator = new Allocator();
+
+        const {positions: positionsData, normals: normalsData, colors: colorsData, uvs: uvsData, ids: idsData, indices: indicesData, mins: minsData, maxs: maxsData, arrayBuffer} = data;
+        const positions = allocator.alloc(Float32Array, positionsData.length);
+        positions.set(positionsData);
+        const normals = allocator.alloc(Float32Array, normalsData.length);
+        normals.set(normalsData);
+        const colors = allocator.alloc(Float32Array, colorsData.length);
+        colors.set(colorsData);
+        const uvs = allocator.alloc(Float32Array, uvsData.length);
+        uvs.set(uvsData);
+        const ids = allocator.alloc(Uint32Array, idsData.length);
+        ids.set(idsData);
+        const indices = allocator.alloc(Uint32Array, indicesData.length);
+        indices.set(indicesData);
+
+        const mins = allocator.alloc(Float32Array, 3);
+        mins[0] = minsData[0];
+        mins[1] = minsData[1];
+        mins[2] = minsData[2];
+        const maxs = allocator.alloc(Float32Array, 3);
+        maxs[0] = maxsData[0];
+        maxs[1] = maxsData[1];
+        maxs[2] = maxsData[2];
+
+        const outPositions = allocator.alloc(Float32Array, 500*1024);
+        const outNormals = allocator.alloc(Float32Array, 500*1024);
+        const outColors = allocator.alloc(Float32Array, 500*1024);
+        const outUvs = allocator.alloc(Float32Array, 500*1024);
+        const outIds = allocator.alloc(Uint32Array, 500*1024);
+        const outFaces = allocator.alloc(Uint32Array, 500*1024);
+
+        const outNumPositions = allocator.alloc(Uint32Array, 1);
+        const outNumNormals = allocator.alloc(Uint32Array, 1);
+        const outNumColors = allocator.alloc(Uint32Array, 1);
+        const outNumUvs = allocator.alloc(Uint32Array, 1);
+        const outNumIds = allocator.alloc(Uint32Array, 1);
+        const outNumFaces = allocator.alloc(Uint32Array, 1);
+
+        self.Module._doChunkOne(
+          positions.offset,
+          positions.length,
+          normals.offset,
+          normals.length,
+          colors.offset,
+          colors.length,
+          uvs.offset,
+          uvs.length,
+          ids.offset,
+          ids.length,
+          indices.offset,
+          indices.length,
+          mins.offset,
+          maxs.offset,
+          outPositions.offset,
+          outNumPositions.offset,
+          outNormals.offset,
+          outNumNormals.offset,
+          outColors.offset,
+          outNumColors.offset,
+          outUvs.offset,
+          outNumUvs.offset,
+          outIds.offset,
+          outNumIds.offset,
+          outFaces.offset,
+          outNumFaces.offset
+        );
+
+        const arrayBuffer2 = new ArrayBuffer(
+          Uint32Array.BYTES_PER_ELEMENT +
+          outNumPositions[0]*Float32Array.BYTES_PER_ELEMENT +
+          Uint32Array.BYTES_PER_ELEMENT +
+          outNumNormals[0]*Float32Array.BYTES_PER_ELEMENT +
+          Uint32Array.BYTES_PER_ELEMENT +
+          outNumColors[0]*Float32Array.BYTES_PER_ELEMENT +
+          Uint32Array.BYTES_PER_ELEMENT +
+          outNumUvs[0]*Float32Array.BYTES_PER_ELEMENT +
+          Uint32Array.BYTES_PER_ELEMENT +
+          outNumIds[0]*Uint32Array.BYTES_PER_ELEMENT +
+          Uint32Array.BYTES_PER_ELEMENT +
+          outNumFaces[0]*Uint32Array.BYTES_PER_ELEMENT
+        );
+        let index = 0;
+
+        const numP = outNumPositions[0];
+        const outP = new Float32Array(arrayBuffer2, index, numP);
+        outP.set(new Float32Array(outPositions.buffer, outPositions.byteOffset, numP));
+        index += Float32Array.BYTES_PER_ELEMENT * numP;
+
+        const numN = outNumNormals[0];
+        const outN = new Float32Array(arrayBuffer2, index, numN);
+        outN.set(new Float32Array(outNormals.buffer, outNormals.byteOffset, numN));
+        index += Float32Array.BYTES_PER_ELEMENT * numN;
+
+        const numC = outNumColors[0];
+        const outC = new Float32Array(arrayBuffer2, index, numC);
+        outC.set(new Float32Array(outColors.buffer, outColors.byteOffset, numC));
+        index += Float32Array.BYTES_PER_ELEMENT * numC;
+
+        const numU = outNumUvs[0];
+        const outU = new Float32Array(arrayBuffer2, index, numU);
+        outU.set(new Float32Array(outUvs.buffer, outUvs.byteOffset, numU));
+        index += Float32Array.BYTES_PER_ELEMENT * numU;
+
+        const numX = outNumIds[0];
+        const outX = new Uint32Array(arrayBuffer2, index, numX);
+        outX.set(new Uint32Array(outIds.buffer, outIds.byteOffset, numX));
+        index += Uint32Array.BYTES_PER_ELEMENT * numX;
+
+        const numI = outNumFaces[0];
+        const outI = new Uint32Array(arrayBuffer2, index, numI);
+        outI.set(new Uint32Array(outFaces.buffer, outFaces.byteOffset, numI));
+        index += Uint32Array.BYTES_PER_ELEMENT * numI;
+
+        self.postMessage({
+          result: {
+            positions: outP,
+            normals: outN,
+            colors: outC,
+            uvs: outU,
+            ids: outX,
+            indices: outI,
+            arrayBuffer,
+          },
+        }, [arrayBuffer, arrayBuffer2]);
+        allocator.freeAll();
+        break;
+      }
+      case 'decimate': {
+        const allocator = new Allocator();
+
+        const {positions: positionsData, normals: normalsData, colors: colorsData, uvs: uvsData, ids: idsData, minTris, quantization, targetError, aggressiveness, base, iterationOffset, arrayBuffer} = data;
+        const positions = allocator.alloc(Float32Array, positionsData.length);
+        positions.set(positionsData);
+        const normals = allocator.alloc(Float32Array, normalsData.length);
+        normals.set(normalsData);
+        const colors = allocator.alloc(Float32Array, colorsData.length);
+        colors.set(colorsData);
+        const uvs = allocator.alloc(Float32Array, uvsData.length);
+        uvs.set(uvsData);
+        const ids = allocator.alloc(Uint32Array, idsData.length);
+        ids.set(idsData);
+        const indices = allocator.alloc(Uint32Array, positions.length/3);
+
+        const numPositions = allocator.alloc(Uint32Array, 1);
+        numPositions[0] = positions.length;
+        const numNormals = allocator.alloc(Uint32Array, 1);
+        numNormals[0] = normals.length;
+        const numColors = allocator.alloc(Uint32Array, 1);
+        numColors[0] = colors.length;
+        const numUvs = allocator.alloc(Uint32Array, 1);
+        numUvs[0] = uvs.length;
+        const numIds = allocator.alloc(Uint32Array, 1);
+        numIds[0] = ids.length;
+        const numIndices = allocator.alloc(Uint32Array, 1);
+        numIndices[0] = indices.length;
+
+        self.Module._doDecimate(
+          positions.offset,
+          numPositions.offset,
+          normals.offset,
+          numNormals.offset,
+          colors.offset,
+          numColors.offset,
+          uvs.offset,
+          numUvs.offset,
+          ids.offset,
+          numIds.offset,
+          minTris,
+          quantization,
+          targetError,
+          aggressiveness,
+          base,
+          iterationOffset,
+          indices.offset,
+          numIndices.offset
+        );
+
+        const arrayBuffer2 = new ArrayBuffer(
+          Uint32Array.BYTES_PER_ELEMENT +
+          numPositions[0]*Float32Array.BYTES_PER_ELEMENT +
+          Uint32Array.BYTES_PER_ELEMENT +
+          numNormals[0]*Float32Array.BYTES_PER_ELEMENT +
+          Uint32Array.BYTES_PER_ELEMENT +
+          numColors[0]*Float32Array.BYTES_PER_ELEMENT +
+          Uint32Array.BYTES_PER_ELEMENT +
+          numUvs[0]*Float32Array.BYTES_PER_ELEMENT +
+          Uint32Array.BYTES_PER_ELEMENT +
+          numIds[0]*Uint32Array.BYTES_PER_ELEMENT +
+          Uint32Array.BYTES_PER_ELEMENT +
+          numIndices[0]*Uint32Array.BYTES_PER_ELEMENT
+        );
+        let index = 0;
+
+        const outP = new Float32Array(arrayBuffer2, index, numPositions[0]);
+        outP.set(new Float32Array(positions.buffer, positions.byteOffset, numPositions[0]));
+        index += Float32Array.BYTES_PER_ELEMENT * numPositions[0];
+
+        const outN = new Float32Array(arrayBuffer2, index, numNormals[0]);
+        outN.set(new Float32Array(normals.buffer, normals.byteOffset, numNormals[0]));
+        index += Float32Array.BYTES_PER_ELEMENT * numNormals[0];
+
+        const outC = new Float32Array(arrayBuffer2, index, numColors[0]);
+        outC.set(new Float32Array(colors.buffer, colors.byteOffset, numColors[0]));
+        index += Float32Array.BYTES_PER_ELEMENT * numColors[0];
+
+        const outU = new Float32Array(arrayBuffer2, index, numUvs[0]);
+        outU.set(new Float32Array(uvs.buffer, uvs.byteOffset, numUvs[0]));
+        index += Float32Array.BYTES_PER_ELEMENT * numUvs[0];
+
+        const outX = new Uint32Array(arrayBuffer2, index, numIds[0]);
+        outX.set(new Uint32Array(ids.buffer, ids.byteOffset, numIds[0]));
+        index += Uint32Array.BYTES_PER_ELEMENT * numIds[0];
+
+        const outI = new Uint32Array(arrayBuffer2, index, numIndices[0]);
+        outI.set(new Uint32Array(indices.buffer, indices.byteOffset, numIndices[0]));
+        index += Uint32Array.BYTES_PER_ELEMENT * numIndices[0];
+
+        self.postMessage({
+          result: {
+            positions: outP,
+            normals: outN,
+            colors: outC,
+            uvs: outU,
+            ids: outX,
+            indices: outI,
+            arrayBuffer,
+          },
+        }, [arrayBuffer, arrayBuffer2]);
+        allocator.freeAll();
+        break;
+      }
+      case 'decimateMarch': {
+        const allocator = new Allocator();
+
+        const {positions: positionsData, dims: dimsData, shift: shiftData, size: sizeData, arrayBuffer} = data;
+        const positions = allocator.alloc(Float32Array, 512*1024*Float32Array.BYTES_PER_ELEMENT);
+        positions.set(positionsData);
+        const indices = allocator.alloc(Uint32Array, 512*1024*Uint32Array.BYTES_PER_ELEMENT);
+
+        const numPositions = allocator.alloc(Uint32Array, 1);
+        numPositions[0] = positions.length;
+        const numIndices = allocator.alloc(Uint32Array, 1);
+        numIndices[0] = indices.length;
+
+        const dims = allocator.alloc(Uint32Array, 3);
+        dims.set(Uint32Array.from(dimsData));
+
+        const shift = allocator.alloc(Float32Array, 3);
+        shift.set(Float32Array.from(shiftData));
+
+        const size = allocator.alloc(Float32Array, 3);
+        size.set(Float32Array.from(sizeData));
+
+        self.Module._doDecimateMarch(
+          dims.offset,
+          shift.offset,
+          size.offset,
+          positions.offset,
+          indices.offset,
+          numPositions.offset,
+          numIndices.offset
+        );
+
+        const arrayBuffer2 = new ArrayBuffer(
+          Uint32Array.BYTES_PER_ELEMENT +
+          numPositions[0]*Float32Array.BYTES_PER_ELEMENT +
+          Uint32Array.BYTES_PER_ELEMENT +
+          numIndices[0]*Uint32Array.BYTES_PER_ELEMENT
+        );
+        let index = 0;
+
+        const outP = new Float32Array(arrayBuffer2, index, numPositions[0]);
+        outP.set(new Float32Array(positions.buffer, positions.byteOffset, numPositions[0]));
+        index += Float32Array.BYTES_PER_ELEMENT * numPositions[0];
+
+        const outI = new Uint32Array(arrayBuffer2, index, numIndices[0]);
+        outI.set(new Uint32Array(indices.buffer, indices.byteOffset, numIndices[0]));
+        index += Uint32Array.BYTES_PER_ELEMENT * numIndices[0];
+
+        self.postMessage({
+          result: {
+            positions: outP,
+            indices: outI,
+            arrayBuffer,
+          },
+        }, [arrayBuffer, arrayBuffer2]);
+        allocator.freeAll();
+        break;
+      }
+      case 'marchPotentials': {
+        const allocator = new Allocator();
+
+        const {potentials: potentialsData, dims: dimsData, shift: shiftData, size: sizeData, arrayBuffer} = data;
+
+        const potentials = allocator.alloc(Float32Array, 512*1024*Float32Array.BYTES_PER_ELEMENT);
+        potentials.set(potentialsData);
+
+        const positions = allocator.alloc(Float32Array, 512*1024*Float32Array.BYTES_PER_ELEMENT);
+        const indices = allocator.alloc(Uint32Array, 512*1024*Uint32Array.BYTES_PER_ELEMENT);
+
+        const numPositions = allocator.alloc(Uint32Array, 1);
+        numPositions[0] = positions.length;
+        const numIndices = allocator.alloc(Uint32Array, 1);
+        numIndices[0] = indices.length;
+
+        const dims = allocator.alloc(Uint32Array, 3);
+        dims.set(Uint32Array.from(dimsData));
+
+        const shift = allocator.alloc(Float32Array, 3);
+        shift.set(Float32Array.from(shiftData));
+
+        const size = allocator.alloc(Float32Array, 3);
+        size.set(Float32Array.from(sizeData));
+
+        self.Module._doMarchPotentials(
+          dims.offset,
+          shift.offset,
+          size.offset,
+          potentials.offset,
+          positions.offset,
+          indices.offset,
+          numPositions.offset,
+          numIndices.offset
+        );
+
+        const arrayBuffer2 = new ArrayBuffer(
+          Uint32Array.BYTES_PER_ELEMENT +
+          numPositions[0]*Float32Array.BYTES_PER_ELEMENT +
+          Uint32Array.BYTES_PER_ELEMENT +
+          numIndices[0]*Uint32Array.BYTES_PER_ELEMENT
+        );
+        let index = 0;
+
+        const outP = new Float32Array(arrayBuffer2, index, numPositions[0]);
+        outP.set(new Float32Array(positions.buffer, positions.byteOffset, numPositions[0]));
+        index += Float32Array.BYTES_PER_ELEMENT * numPositions[0];
+
+        const outI = new Uint32Array(arrayBuffer2, index, numIndices[0]);
+        outI.set(new Uint32Array(indices.buffer, indices.byteOffset, numIndices[0]));
+        index += Uint32Array.BYTES_PER_ELEMENT * numIndices[0];
+
+        self.postMessage({
+          result: {
+            positions: outP,
+            indices: outI,
+            arrayBuffer,
+          },
+        }, [arrayBuffer, arrayBuffer2]);
+        allocator.freeAll();
+        break;
+      }
+      /* case 'initVoxelize': {
+        break;
+      }
+      case 'voxelize': {
+        break;
+      } */
+      /* case 'cut': {
+        const allocator = new Allocator();
+
+        const {positions: positionsData, faces: facesData, position: positionData, quaternion: quaternionData, scale: scaleData, arrayBuffer} = data;
+
+        const positions = allocator.alloc(Float32Array, positionsData.length);
+        positions.set(positionsData);
+        const faces = allocator.alloc(Uint32Array, facesData.length);
+        faces.set(facesData);
+        const position = allocator.alloc(Float32Array, 3);
+        position.set(positionData);
+        const quaternion = allocator.alloc(Float32Array, 4);
+        quaternion.set(quaternionData);
+        const scale = allocator.alloc(Float32Array, 3);
+        scale.set(scaleData);
+
+        const outPositions = allocator.alloc(Float32Array, 300*1024/Float32Array.BYTES_PER_ELEMENT);
+        const numOutPositions = allocator.alloc(Uint32Array, 2);
+        const outFaces = allocator.alloc(Uint32Array, 300*1024/Uint32Array.BYTES_PER_ELEMENT);
+        const numOutFaces = allocator.alloc(Uint32Array, 2);
+
+        self.Module._doCut(
+          positions.offset,
+          positions.length,
+          faces.offset,
+          faces.length,
+          position.offset,
+          quaternion.offset,
+          scale.offset,
+          outPositions.offset,
+          numOutPositions.offset,
+          outFaces.offset,
+          numOutFaces.offset
+        );
+
+        let index = 0;
+        const outPositions2 = new Float32Array(arrayBuffer, index, numOutPositions[0]);
+        outPositions2.set(outPositions.slice(0, numOutPositions[0]));
+        index += numOutPositions[0]*Float32Array.BYTES_PER_ELEMENT;
+        const outFaces2 = new Uint32Array(arrayBuffer, index, numOutFaces[0]);
+        outFaces2.set(outFaces.slice(0, numOutFaces[0]));
+        index += numOutFaces[0]*Uint32Array.BYTES_PER_ELEMENT;
+
+        const outPositions3 = new Float32Array(arrayBuffer, index, numOutPositions[1]);
+        outPositions3.set(outPositions.slice(numOutPositions[0], numOutPositions[0] + numOutPositions[1]));
+        index += numOutPositions[1]*Float32Array.BYTES_PER_ELEMENT;
+        const outFaces3 = new Uint32Array(arrayBuffer, index, numOutFaces[1]);
+        outFaces3.set(outFaces.slice(numOutFaces[0], numOutFaces[0] + numOutFaces[1]));
+        index += numOutFaces[1]*Uint32Array.BYTES_PER_ELEMENT;
+
+        self.postMessage({
+          result: {
+            positions: outPositions2,
+            faces: outFaces2,
+            positions2: outPositions3,
+            faces2: outFaces3,
+          },
+        }, [arrayBuffer]);
+
+        allocator.freeAll();
+        break;
+      } */
+      default: {
+        console.warn('unknown method', data.method);
+        break;
+      }
+    }
+  };
 }
 
 export {

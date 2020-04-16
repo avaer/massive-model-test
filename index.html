@@ -454,12 +454,20 @@ let meshes = [];
     }
     return result;
   })(); */
+
+  mesher.initVoxelize(100, 10);
+
   const lod = 10000;
   for (let x = -1; x < 1; x++) {
     for (let z = -1; z < 1; z++) {
-      const mesh = await mesher.getChunk(x, z, lod);
-      container.add(mesh);
-      meshes.push(mesh);
+      /* let x = -1;
+      let y = 0;
+      let z = -1; */
+      const mesh = await mesher.getChunk(x, 0, z, lod);
+      // ms.forEach(mesh => {
+        container.add(mesh);
+        meshes.push(mesh);
+      // });
     }
   }
   /* const _testMesh = async m => {
@@ -491,11 +499,11 @@ let meshes = [];
 function animate() {
   orbitControls.enabled && orbitControls.update();
 
-  const f = (Math.sin((Date.now()%1000)/1000*Math.PI*2)+1)/2*0.3;
+  /* const f = (Math.sin((Date.now()%1000)/1000*Math.PI*2)+1)/2*0.3;
   for (let i = 0; i < meshes.length; i++) {
     const mesh = meshes[i];
     mesh.position.set(mesh.x*f, 0, mesh.z*f);
-  }
+  } */
   
   /* if (currentSession) {
     for (let i = 0; i < 2; i++) {
