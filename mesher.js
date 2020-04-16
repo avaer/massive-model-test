@@ -6,6 +6,9 @@ const NUM_POSITIONS = 8 * 1024 * 1024;
 const TEXTURE_SIZE = 4*1024;
 const CHUNK_SIZE = 16;
 
+const localVector = new THREE.Vector3();
+const localVector2 = new THREE.Vector3();
+const localQuaternion = new THREE.Quaternion();
 const localColor = new THREE.Color();
 const localColor2 = new THREE.Color();
 
@@ -19,7 +22,8 @@ let voxelResolution = 0;
 let canvas = null;
 let renderer = null;
 let xrRaycaster = null;
-let scene = new THREE.Scene();
+const scene = new THREE.Scene();
+// scene.autoUpdate = false;
 const depthMaterial = (() => {
   const depthVsh = `
     // uniform float uAnimation;
@@ -76,6 +80,7 @@ const depthMaterial = (() => {
     vertexShader: depthVsh,
     fragmentShader: depthFsh,
     // transparent: true,
+    side: THREE.DoubleSide,
   });
 })();
 const raycasterCamera = new THREE.PerspectiveCamera();
@@ -678,7 +683,7 @@ class Mesher {
       cameraWidth: voxelSize,
       cameraHeight: voxelSize,
       near: 0.001,
-      far: voxelResolution,
+      far: voxelSize,
       renderer,
       onRender: _renderRaycaster,
     });
@@ -695,25 +700,67 @@ class Mesher {
     } else {
       x = x * voxelSize + voxelSize/2;
       y = y * voxelSize + voxelSize/2;
-      z = z * voxelSize;
+      z = z * voxelSize + voxelSize/2;
 
+      // console.log('got k a', k, x, y, z);
       const dbp = new Float32Array(voxelWidth*voxelWidth*voxelWidth);
-      const start = Date.now();
-      for (let dz = 0; dz < voxelWidth; dz++, z += voxelResolution) {
-        // console.log('chunk query', v.toArray().join(','));
-        xrRaycaster.updateView(x, y, z);
+      dbp.fill(-1);
+      // const start = Date.now();
+      [
+        [x, y, z + voxelSize/2, 0, 0],
+        [x + voxelSize/2, y, z, Math.PI/2, 0],
+        [x, y, z - voxelSize/2, Math.PI/2*2, 0],
+        [x - voxelSize/2, y, z, Math.PI/2*3, 0],
+        [x, y + voxelSize/2, z, 0, -Math.PI/2],
+        [x, y - voxelSize/2, z, 0, Math.PI/2],
+      ].forEach(([x, y, z, ry, rx]) => {
+        // debugger;
+        if (ry !== 0) {
+          localQuaternion.setFromAxisAngle(localVector.set(0, 1, 0), ry);
+        } else if (rx !== 0) {
+          localQuaternion.setFromAxisAngle(localVector.set(1, 0, 0), rx);
+        } else {
+          localQuaternion.set(0, 0, 0, 1);
+        }
+        xrRaycaster.updateView(x, y, z, localQuaternion);
         xrRaycaster.updateTexture();
         // await XRRaycaster.nextFrame();
         xrRaycaster.updateDepthBuffer();
         xrRaycaster.updateDepthBufferPixels();
         const depthBufferPixels = xrRaycaster.getDepthBufferPixels();
-        dbp.set(depthBufferPixels, dz*voxelWidth*voxelWidth);
-        // depthBufferPixels = depthBufferPixels.slice();
-        // console.log('got depth buffer pixels', depthBufferPixels);
-        // xrRaycaster.updatePointCloudBuffer();
-      }
-      const end = Date.now();
-      console.log('got k', k, x, y, z, end - start);
+
+        /* x = mod(x, voxelSize);
+        y = mod(y, voxelSize);
+        z = mod(z, voxelSize); */
+
+        const _f = () => {
+          for (let u = 0; u < voxelWidth; u++) {
+            for (let v = 0; v < voxelWidth; v++) {
+              const p = localVector.set(x, y, z)
+                .add(
+                  localVector2
+                    .set(-voxelSize/2 + voxelResolution/2 + u*voxelResolution, -voxelSize/2 + voxelResolution/2 + v*voxelResolution, -voxelResolution/2)
+                    .applyQuaternion(localQuaternion)
+                  );
+              p.x = mod(Math.floor(p.x/voxelResolution), voxelWidth);
+              p.y = mod(Math.floor(p.y/voxelResolution), voxelWidth);
+              p.z = mod(Math.floor(p.z/voxelResolution), voxelWidth);
+              const increment = localVector2.set(0, 0, -1).applyQuaternion(localQuaternion);
+              let depth = depthBufferPixels[u + v*voxelWidth];
+              depth -= voxelResolution/2;
+              for (let d = voxelResolution/2; d < depth && d < voxelSize; d += voxelResolution, p.add(increment)) {
+                dbp[p.x + p.y*voxelWidth*voxelWidth + p.z*voxelWidth] = 0.3;
+              }
+            }
+          }
+          /* if (depthBufferPixels.filter(n => n < Infinity).length > 3) {
+            debugger;
+          } */
+        };
+        _f();
+      });
+      // const end = Date.now();
+      // console.log('got k b', k, x, y, z, end - start);
       this.dbpCache[k] = dbp;
       return dbp;
     }
@@ -724,6 +771,7 @@ class Mesher {
       m.traverse(o => {
         if (o.isMesh) {
           o.frustumCulled = false;
+          o.isSkinnedMesh = false;
         }
       });
       scene.add(m);
@@ -752,10 +800,9 @@ class Mesher {
           const nx = mod(ax, voxelWidth);
           const ny = mod(ay, voxelWidth);
           const nz = mod(az, voxelWidth);
-          if (depthBufferPixels[nx + ny*voxelWidth + nz*voxelWidth*voxelWidth] < Infinity) {
-            const index = ix + iy*voxelWidthP2*voxelWidthP2 + iz*voxelWidthP2;
-            potentials[index] = -1;
-          }
+          const srcIndex = nx + ny*voxelWidth*voxelWidth + nz*voxelWidth;
+          const dstIndex = ix + iy*voxelWidthP2*voxelWidthP2 + iz*voxelWidthP2;
+          potentials[dstIndex] = depthBufferPixels[srcIndex];
         }
       }
     }
@@ -1334,11 +1381,11 @@ class MesherServer {
 
         const {potentials: potentialsData, dims: dimsData, shift: shiftData, size: sizeData, arrayBuffer} = data;
 
-        const potentials = allocator.alloc(Float32Array, 512*1024*Float32Array.BYTES_PER_ELEMENT);
+        const potentials = allocator.alloc(Float32Array, 1024*1024*Float32Array.BYTES_PER_ELEMENT);
         potentials.set(potentialsData);
 
-        const positions = allocator.alloc(Float32Array, 512*1024*Float32Array.BYTES_PER_ELEMENT);
-        const indices = allocator.alloc(Uint32Array, 512*1024*Uint32Array.BYTES_PER_ELEMENT);
+        const positions = allocator.alloc(Float32Array, 1024*1024*Float32Array.BYTES_PER_ELEMENT);
+        const indices = allocator.alloc(Uint32Array, 1024*1024*Uint32Array.BYTES_PER_ELEMENT);
 
         const numPositions = allocator.alloc(Uint32Array, 1);
         numPositions[0] = positions.length;
