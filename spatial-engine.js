@@ -22,20 +22,20 @@ const _makePromise = () => {
 const _floorVector = v => v.set(Math.floor(v.x), Math.floor(v.y), Math.floor(v.z));
 
 export class XRRaycaster {
-  constructor({width = 512, height = 512, pixelRatio = 1, cameraHeight = 1, cameraWidth = 1, near = 0.1, far = 300, renderer = new THREE.WebGLRenderer(), onColorRender = (target, camera) => {}, onDepthRender = (target, camera) => {}} = {}) {
-    this.width = width;
-    this.height = height;
+  constructor({width = 512, height = 512, pixelRatio = 1, voxelSize, renderer = new THREE.WebGLRenderer(), onColorRender = (target, camera) => {}, onDepthRender = (target, camera) => {}} = {}) {
+    // this.width = width;
+    // this.height = height;
     this.renderer = renderer;
 
     const depthBufferPixels = new Float32Array(width*pixelRatio*height*pixelRatio);
     this.depthBufferPixels = depthBufferPixels;
 
-    const camera = new THREE.OrthographicCamera(
-      cameraWidth / -2, cameraWidth / 2,
-      cameraHeight / 2, cameraHeight / -2,
-      near, far
+    let camera = new THREE.OrthographicCamera(
+      voxelSize / -2, voxelSize / 2,
+      voxelSize / 2, voxelSize / -2,
+      0.001, voxelSize
     );
-    this.camera = camera;
+    // this.camera = camera;
 
     const depthTarget = new THREE.WebGLRenderTarget(width * pixelRatio, height * pixelRatio, {
       minFilter: THREE.LinearFilter,
@@ -52,6 +52,13 @@ export class XRRaycaster {
     this.colorTargetDepthBuf = colorTargetDepthBuf;
     /* const colorTargetCoordBuf = new Float32Array(width*pixelRatio*height*pixelRatio*3); // decoded xyz points
     this.colorTargetCoordBuf = colorTargetCoordBuf; */
+    depthTarget.updateLod = (voxelSize, lod) => {
+      camera = new THREE.OrthographicCamera(
+        voxelSize / -2, voxelSize / 2,
+        voxelSize / 2, voxelSize / -2,
+        0.001, voxelSize
+      );
+    };
     depthTarget.updateView = (x, y, z, q) => {
       // const position = localVector.fromArray(p);
       // const quaternion = localQuaternion.fromArray(q);
@@ -68,8 +75,8 @@ export class XRRaycaster {
       // if (!colorTarget.fresh) {
         onDepthRender({
           target: depthTarget,
-          near,
-          far,
+          near: 0.001,
+          far: voxelSize,
           width,
           height,
           pixelRatio,
@@ -112,7 +119,7 @@ export class XRRaycaster {
         for (let y = 0; y < height * pixelRatio; y++) {
           for (let x = 0; x < width * pixelRatio; x++) {
             let v = XRRaycaster.decodePixelDepth(colorTargetDepthBuf, index4);
-            if (v > far) {
+            if (v > voxelSize) {
               v = Infinity;
             }
             depthBufferPixels[index] = v;
@@ -164,6 +171,9 @@ export class XRRaycaster {
       return null;
     }
   } */
+  updateLod(voxelSize, lod) {
+    this.depthTarget.updateLod(voxelSize, lod);
+  }
   updateView(x, y, z, q) {
     this.depthTarget.updateView(x, y, z, q);
   }

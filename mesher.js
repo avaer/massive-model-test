@@ -690,12 +690,19 @@ class Mesher {
 
     return mesh;
   }
-  getMeshesInChunk(x, z) {
-    x += CHUNK_SIZE/2;
-    z += CHUNK_SIZE/2;
-    return this.meshes.filter(m => m.aabb.min.x <= x && m.aabb.max.x >= x && m.aabb.min.z <= z && m.aabb.max.z >= z);
+  getMeshesInChunk(x, y, z, lod) {
+    const lodVoxelSize = voxelSize * (2**lod);
+    const lodVoxelWidth = voxelWidth;
+    const lodVoxelResolution = voxelResolution * (2**lod);
+
+    const aabb = new THREE.Box3(
+      new THREE.Vector3(x*lodVoxelSize, y*lodVoxelSize, z*lodVoxelSize),
+      new THREE.Vector3((x+1)*lodVoxelSize, (y+1)*lodVoxelSize, (z+1)*lodVoxelSize)
+    );
+    // console.log('got aabbs', this.meshes.map(m => ([m.aabb.min.toArray(), m.aabb.max.toArray()])));
+    return this.meshes.filter(m => m.aabb.intersectsBox(aabb));
   }
-  getMeshBudgets(meshes) {
+  /* getMeshBudgets(meshes) {
     let chunkWeights = {};
     for (let x = this.aabb.min.x; x < this.aabb.max.x; x += CHUNK_SIZE) {
       for (let z = this.aabb.min.z; z < this.aabb.max.z; z += CHUNK_SIZE) {
@@ -715,7 +722,7 @@ class Mesher {
       }
       return budget;
     });
-  }
+  } */
   initVoxelize(newWidth, newSize, newPixelRatio) {
     voxelWidth = newWidth;
     voxelSize = newSize;
@@ -730,37 +737,40 @@ class Mesher {
       width: voxelWidth,
       height: voxelWidth,
       pixelRatio,
-      cameraWidth: voxelSize,
-      cameraHeight: voxelSize,
-      near: 0.001,
-      far: voxelSize,
+      voxelSize,
       renderer,
       onDepthRender: _onDepthRender,
     });
   }
-  async getBufferPixels(x, y, z) {
-    x = Math.floor(x/voxelWidth);
-    y = Math.floor(y/voxelWidth);
-    z = Math.floor(z/voxelWidth);
+  async getBufferPixels(x, y, z, lod) {
+    const lodVoxelSize = voxelSize * (2**lod);
+    const lodVoxelWidth = voxelWidth;
+    const lodVoxelResolution = voxelResolution * (2**lod);
+
+    x = Math.floor(x/lodVoxelWidth);
+    y = Math.floor(y/lodVoxelWidth);
+    z = Math.floor(z/lodVoxelWidth);
 
     const k = x + ':' + y + ':' + z;
     const depthBufferPixels = this.dbpCache[k];
     if (!depthBufferPixels) {
-      const ax = x * voxelSize + voxelSize/2;
-      const ay = y * voxelSize + voxelSize/2;
-      const az = z * voxelSize + voxelSize/2;
+      const ax = x * lodVoxelSize + lodVoxelSize/2;
+      const ay = y * lodVoxelSize + lodVoxelSize/2;
+      const az = z * lodVoxelSize + lodVoxelSize/2;
 
       const o = Math.floor(pixelRatio/2);
 
-      const depthTextures = new Float32Array(voxelWidth * voxelWidth * 6);
+      xrRaycaster.updateLod(voxelSize, lod);
+
+      const depthTextures = new Float32Array(lodVoxelWidth * lodVoxelWidth * 6);
       depthTextures.fill(Infinity);
       [
-        [ax, ay, az + voxelSize/2, 0, 0],
-        [ax + voxelSize/2, ay, az, Math.PI/2, 0],
-        [ax, ay, az - voxelSize/2, Math.PI/2*2, 0],
-        [ax - voxelSize/2, ay, az, Math.PI/2*3, 0],
-        [ax, ay + voxelSize/2, az, 0, -Math.PI/2],
-        [ax, ay - voxelSize/2, az, 0, Math.PI/2],
+        [ax, ay, az + lodVoxelSize/2, 0, 0],
+        [ax + lodVoxelSize/2, ay, az, Math.PI/2, 0],
+        [ax, ay, az - lodVoxelSize/2, Math.PI/2*2, 0],
+        [ax - lodVoxelSize/2, ay, az, Math.PI/2*3, 0],
+        [ax, ay + lodVoxelSize/2, az, 0, -Math.PI/2],
+        [ax, ay - lodVoxelSize/2, az, 0, Math.PI/2],
       ].forEach(([x, y, z, ry, rx], i) => {
         if (ry !== 0) {
           localQuaternion.setFromAxisAngle(localVector.set(0, 1, 0), ry);
@@ -776,21 +786,21 @@ class Mesher {
         xrRaycaster.updateDepthBufferPixels();
         const depthTexture = xrRaycaster.getDepthBufferPixels();
 
-        const startIndex = i * voxelWidth * voxelWidth;
-        for (let x = 0; x < voxelWidth; x++) {
-          for (let y = 0; y < voxelWidth; y++) {
+        const startIndex = i * lodVoxelWidth * lodVoxelWidth;
+        for (let x = 0; x < lodVoxelWidth; x++) {
+          for (let y = 0; y < lodVoxelWidth; y++) {
             let acc = Infinity;
             for (let dx = -o; dx <= o; dx++) {
               for (let dy = -o; dy <= o; dy++) {
                 const ax = o + x*pixelRatio + dx;
                 const ay = o + y*pixelRatio + dy;
-                const index = ax + ay*voxelWidth*pixelRatio;
+                const index = ax + ay*lodVoxelWidth*pixelRatio;
                 const v = depthTexture[index];
                 acc = Math.min(acc, v);
               }
             }
             if (acc < Infinity) {
-              const index = startIndex + x + y*voxelWidth;
+              const index = startIndex + x + y*lodVoxelWidth;
               depthTextures[index] = acc;
             }
           }
@@ -799,21 +809,25 @@ class Mesher {
 
       this.reset();
 
+      // console.log('push chunk texture 1', x, y, z, lod);
+
       const {arrayBuffer} = this;
       this.arrayBuffer = null;
       const res = await this.worker.request({
         method: 'pushChunkTexture',
         depthTextures,
-        x, y, z, voxelWidth, voxelSize, voxelResolution,
+        x, y, z, lod, voxelWidth: lodVoxelWidth, voxelSize: lodVoxelSize, voxelResolution: lodVoxelResolution,
         arrayBuffer,
       }, [arrayBuffer]);
       // console.log('got res', res);
       this.arrayBuffers.push(res.arrayBuffer);
 
+      // console.log('push chunk texture 2', x, y, z, lod);
+
       this.dbpCache[k] = true;
     }
   }
-  async voxelize(x, y, z, meshes) {
+  async voxelize(x, y, z, lod, meshes) {
     console.log('got meshes', meshes);
     meshes.forEach(m => {
       m.traverse(o => {
@@ -825,18 +839,24 @@ class Mesher {
       scene.add(m);
     });
 
+    const lodVoxelSize = voxelSize * (2**lod);
+    const lodVoxelWidth = voxelWidth;
+    const lodVoxelResolution = voxelResolution * (2**lod);
+
     for (let iz = -1; iz <= 1; iz++) {
       for (let ix = -1; ix <= 1; ix++) {
         for (let iy = -1; iy <= 1; iy++) {
-          const ax = (x+ix) * voxelWidth;
-          const ay = (y+iy) * voxelWidth;
-          const az = (z+iz) * voxelWidth;
-          await this.getBufferPixels(ax, ay, az);
+          const ax = (x+ix) * lodVoxelWidth;
+          const ay = (y+iy) * lodVoxelWidth;
+          const az = (z+iz) * lodVoxelWidth;
+          await this.getBufferPixels(ax, ay, az, lod);
         }
       }
     }
 
     this.reset();
+
+    // console.log('march potentials 1', x, y, z, lod);
 
     const {arrayBuffer} = this;
     this.arrayBuffer = null;
@@ -845,13 +865,16 @@ class Mesher {
       x,
       y,
       z,
-      dims: [voxelWidth, voxelWidth, voxelWidth],
-      shift: [-voxelResolution + x*voxelSize, -voxelResolution + y*voxelSize, -voxelResolution + z*voxelSize],
-      size: [voxelSize + 2*voxelResolution, voxelSize + 2*voxelResolution, voxelSize + 2*voxelResolution],
+      lod,
+      dims: [lodVoxelWidth, lodVoxelWidth, lodVoxelWidth],
+      shift: [-lodVoxelResolution + x*lodVoxelSize, -lodVoxelResolution + y*lodVoxelSize, -lodVoxelResolution + z*lodVoxelSize],
+      size: [lodVoxelSize + 2*lodVoxelResolution, lodVoxelSize + 2*lodVoxelResolution, lodVoxelSize + 2*lodVoxelResolution],
       arrayBuffer,
     }, [arrayBuffer]);
     console.log('got res', res);
     this.arrayBuffers.push(res.arrayBuffer);
+
+    // console.log('march potentials 2', x, y, z, lod);
 
     const {currentMesh} = this;
     currentMesh.geometry.setAttribute('position', new THREE.BufferAttribute(res.positions, 3));
@@ -883,17 +906,11 @@ class Mesher {
 
     return currentMesh;
   }
-  async getChunk(x, y, z) {
+  async getChunk(x, y, z, lod) {
     const {currentMesh, packer, globalMaterial} = this;
 
-    /* x *= voxelSize;
-    y *= voxelSize;
-    z *= voxelSize; */
-
-    // XXX break up large meshes
-
-    const meshes = this.getMeshesInChunk(x, z);
-    return this.voxelize(x, y, z, meshes);
+    const meshes = this.getMeshesInChunk(x, y, z, lod);
+    return this.voxelize(x, y, z, lod, meshes);
 
     const meshBudgets = this.getMeshBudgets(meshes);
 
@@ -1409,7 +1426,7 @@ class MesherServer {
       case 'pushChunkTexture': {
         const allocator = new Allocator();
 
-        const {colorTextures: colorTexturesData, depthTextures: depthTexturesData, x, y, z, voxelWidth, voxelSize, voxelResolution, arrayBuffer} = data;
+        const {x, y, z, lod, depthTextures: depthTexturesData, voxelWidth, voxelSize, voxelResolution, arrayBuffer} = data;
 
         const depthTextures = allocator.alloc(Float32Array, depthTexturesData.length);
         depthTextures.set(depthTexturesData);
@@ -1418,6 +1435,7 @@ class MesherServer {
           x,
           y,
           z,
+          lod,
           depthTextures.offset,
           voxelWidth,
           voxelSize,
@@ -1437,7 +1455,7 @@ class MesherServer {
       case 'marchPotentials': {
         const allocator = new Allocator();
 
-        const {x, y, z, dims: dimsData, shift: shiftData, size: sizeData, arrayBuffer} = data;
+        const {x, y, z, lod, dims: dimsData, shift: shiftData, size: sizeData, arrayBuffer} = data;
 
         const positions = allocator.alloc(Float32Array, 1024*1024*Float32Array.BYTES_PER_ELEMENT);
         const barycentrics = allocator.alloc(Float32Array, 1024*1024*Float32Array.BYTES_PER_ELEMENT);
@@ -1460,6 +1478,7 @@ class MesherServer {
           x,
           y,
           z,
+          lod,
           dims.offset,
           shift.offset,
           size.offset,
@@ -1497,12 +1516,6 @@ class MesherServer {
         allocator.freeAll();
         break;
       }
-      /* case 'initVoxelize': {
-        break;
-      }
-      case 'voxelize': {
-        break;
-      } */
       /* case 'cut': {
         const allocator = new Allocator();
 
