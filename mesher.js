@@ -85,7 +85,38 @@ const depthMaterial = (() => {
   });
 })();
 const raycasterCamera = new THREE.PerspectiveCamera();
-const _renderRaycaster = ({target, near, far, matrixWorld, projectionMatrix}) => {
+const _onColorRender = ({target, near, far, matrixWorld, projectionMatrix}) => {
+  raycasterCamera.near = near;
+  raycasterCamera.far = far;
+  raycasterCamera.matrixWorld.fromArray(matrixWorld).decompose(raycasterCamera.position, raycasterCamera.quaternion, raycasterCamera.scale);
+  raycasterCamera.projectionMatrix.fromArray(projectionMatrix);
+  depthMaterial.uniforms.uNear.value = near;
+  depthMaterial.uniforms.uFar.value = far;
+
+  // console.log('render', target, near, far, matrixWorld, projectionMatrix);
+
+  {
+    // const unhideUiMeshes = _hideUiMeshes();
+
+    // scene.overrideMaterial = depthMaterial;
+    // const oldVrEnabled = renderer.vr.enabled;
+    // renderer.vr.enabled = false;
+    // const oldClearColor = localColor.copy(renderer.getClearColor());
+    // const oldClearAlpha = renderer.getClearAlpha();
+    renderer.setRenderTarget(target);
+
+    renderer.render(scene, raycasterCamera);
+
+    // scene.overrideMaterial = null;
+    // renderer.vr.enabled = oldVrEnabled;
+    // renderer.setClearColor(oldClearColor, oldClearAlpha);
+
+    // unhideUiMeshes();
+
+    renderer.setRenderTarget(null);
+  }
+};
+const _onDepthRender = ({target, near, far, matrixWorld, projectionMatrix}) => {
   raycasterCamera.near = near;
   raycasterCamera.far = far;
   raycasterCamera.matrixWorld.fromArray(matrixWorld).decompose(raycasterCamera.position, raycasterCamera.quaternion, raycasterCamera.scale);
@@ -103,7 +134,6 @@ const _renderRaycaster = ({target, near, far, matrixWorld, projectionMatrix}) =>
     // renderer.vr.enabled = false;
     // const oldClearColor = localColor.copy(renderer.getClearColor());
     // const oldClearAlpha = renderer.getClearAlpha();
-    renderer.setClearColor(localColor2.setRGB(0, 0, 0), 1);
     renderer.setRenderTarget(target);
 
     renderer.render(scene, raycasterCamera);
@@ -118,14 +148,49 @@ const _renderRaycaster = ({target, near, far, matrixWorld, projectionMatrix}) =>
   }
 };
 
-
-
-const makeGlobalMaterial = () => new THREE.MeshStandardMaterial({
-  map: null,
-  color: 0xFFFFFF,
-  vertexColors: true,
+const makeGlobalMaterial = () => new THREE.ShaderMaterial({
+  uniforms: {},
+  vertexShader: `\
+    attribute vec3 barycentric;
+    varying vec3 vPosition;
+    varying vec3 vBC;
+    void main() {
+      vBC = barycentric;
+      vec4 modelViewPosition = modelViewMatrix * vec4(position, 1.0);
+      vPosition = modelViewPosition.xyz;
+      gl_Position = projectionMatrix * modelViewPosition;
+    }
+  `,
+  fragmentShader: `\
+    uniform sampler2D uCameraTex;
+    varying vec3 vPosition;
+    varying vec3 vBC;
+    vec3 color = vec3(0.984313725490196, 0.5490196078431373, 0.0);
+    vec3 lightDirection = vec3(0.0, 0.0, 1.0);
+    float edgeFactor() {
+      vec3 d = fwidth(vBC);
+      vec3 a3 = smoothstep(vec3(0.0), d*1.5, vBC);
+      return min(min(a3.x, a3.y), a3.z);
+    }
+    void main() {
+      float barycentricFactor = (0.2 + (1.0 - edgeFactor()) * 0.8);
+      vec3 xTangent = dFdx( vPosition );
+      vec3 yTangent = dFdy( vPosition );
+      vec3 faceNormal = normalize( cross( xTangent, yTangent ) );
+      float lightFactor = dot(faceNormal, lightDirection);
+      gl_FragColor = vec4((0.5 + color * barycentricFactor) * lightFactor, 0.5 + barycentricFactor * 0.5);
+      // gl_FragColor = vec4((0.5 + color * barycentricFactor) * lightFactor, 1.0);
+    }
+  `,
+  // side: THREE.BackSide,
+  /* polygonOffset: true,
+  polygonOffsetFactor: -1,
+  polygonOffsetUnits: -4, */
   // transparent: true,
-  // alphaTest: 0.5,
+  // depthWrite: false,
+  extensions: {
+    derivatives: true,
+  },
 });
 const makeTexture = (i) => {
   const t = new THREE.Texture(i);
@@ -678,6 +743,7 @@ class Mesher {
     renderer = new THREE.WebGLRenderer({
       canvas,
     });
+    renderer.setClearColor(new THREE.Color(0, 0, 0), 1);
     // document.body.appendChild(renderer.domElement);
     xrRaycaster = new XRRaycaster({
       width: voxelWidth,
@@ -688,7 +754,8 @@ class Mesher {
       near: 0.001,
       far: voxelSize,
       renderer,
-      onDepthRender: _renderRaycaster,
+      onColorRender: _onColorRender,
+      onDepthRender: _onDepthRender,
     });
   }
   async getBufferPixels(x, y, z) {
@@ -705,6 +772,7 @@ class Mesher {
 
       const o = Math.floor(pixelRatio/2);
 
+      const colorTextures = new Uint8Array(voxelWidth * voxelWidth * 4 * 6);
       const depthTextures = new Float32Array(voxelWidth * voxelWidth * 6);
       depthTextures.fill(Infinity);
       [
@@ -715,7 +783,6 @@ class Mesher {
         [ax, ay + voxelSize/2, az, 0, -Math.PI/2],
         [ax, ay - voxelSize/2, az, 0, Math.PI/2],
       ].forEach(([x, y, z, ry, rx], i) => {
-        // debugger;
         if (ry !== 0) {
           localQuaternion.setFromAxisAngle(localVector.set(0, 1, 0), ry);
         } else if (rx !== 0) {
@@ -724,45 +791,41 @@ class Mesher {
           localQuaternion.set(0, 0, 0, 1);
         }
         xrRaycaster.updateView(x, y, z, localQuaternion);
-        xrRaycaster.updateDepthTexture();
-        // await XRRaycaster.nextFrame();
-        xrRaycaster.updateDepthBuffer();
-        xrRaycaster.updateDepthBufferPixels();
-        const depthTexture = xrRaycaster.getDepthBufferPixels();
-        /* if (depthTexture.some(n => n < Infinity)) {
-          debugger;
-        } */
-        const startIndex = i * voxelWidth * voxelWidth;
-        for (let x = 0; x < voxelWidth; x++) {
-          for (let y = 0; y < voxelWidth; y++) {
-            // for (let z = 0; z < voxelWidth; z++) {
+        
+        {
+          xrRaycaster.updateDepthTexture();
+          xrRaycaster.updateDepthBuffer();
+          xrRaycaster.updateDepthBufferPixels();
+          const depthTexture = xrRaycaster.getDepthBufferPixels();
+
+          const startIndex = i * voxelWidth * voxelWidth;
+          for (let x = 0; x < voxelWidth; x++) {
+            for (let y = 0; y < voxelWidth; y++) {
               let acc = Infinity;
               for (let dx = -o; dx <= o; dx++) {
                 for (let dy = -o; dy <= o; dy++) {
-                  // for (let dz = -1; dz <= 1; dz++) {
-                    const ax = o + x*pixelRatio + dx;
-                    const ay = o + y*pixelRatio + dy;
-                    // const az = z + dz;
-                    if (ax >= 0 && ax < voxelWidth*pixelRatio && ay >= 0 && ay < voxelWidth*pixelRatio /*&& az >= 0 && az < voxelWidth*/) {
-                      const index = ax + ay*voxelWidth*pixelRatio;
-                      const v = depthTexture[index];
-                      acc = Math.min(acc, v);
-                    } else {
-                      debugger;
-                    }
-                  // }
+                  const ax = o + x*pixelRatio + dx;
+                  const ay = o + y*pixelRatio + dy;
+                  const index = ax + ay*voxelWidth*pixelRatio;
+                  const v = depthTexture[index];
+                  acc = Math.min(acc, v);
                 }
               }
               if (acc < Infinity) {
                 const index = startIndex + x + y*voxelWidth;
                 depthTextures[index] = acc;
               }
-            // }
+            }
           }
         }
-        /* if (depthTextures.some(n => n < Infinity)) {
-          debugger;
-        } */
+        {
+          const startIndex = i * voxelWidth * voxelWidth * 4;
+
+          xrRaycaster.updateColorTexture();
+          xrRaycaster.updateColorBuffer();
+          const colorTexture = xrRaycaster.getColorBufferPixels();
+          colorTextures.set(colorTexture, startIndex);
+        }
       });
 
       this.reset();
@@ -771,7 +834,7 @@ class Mesher {
       this.arrayBuffer = null;
       const res = await this.worker.request({
         method: 'pushChunkTexture',
-        // colorTextures,
+        colorTextures,
         depthTextures,
         x, y, z, voxelWidth, voxelSize, voxelResolution,
         arrayBuffer,
@@ -824,7 +887,8 @@ class Mesher {
 
     const {currentMesh} = this;
     currentMesh.geometry.setAttribute('position', new THREE.BufferAttribute(res.positions, 3));
-    currentMesh.geometry.deleteAttribute('normal', undefined);
+    currentMesh.geometry.setAttribute('normal', new THREE.BufferAttribute(res.normals, 3));
+    currentMesh.geometry.setAttribute('barycentric', new THREE.BufferAttribute(res.barycentrics, 3));
     const c = new THREE.Color(Math.random(), Math.random(), Math.random());
     const cs = new Float32Array(res.positions.length);
     for (let i = 0; i < res.positions.length; i += 3) {
@@ -835,9 +899,9 @@ class Mesher {
     currentMesh.geometry.setAttribute('color', new THREE.BufferAttribute(cs, 3));
     currentMesh.geometry.deleteAttribute('uv', undefined);
     currentMesh.geometry.deleteAttribute('id', undefined);
-    currentMesh.geometry.setIndex(new THREE.BufferAttribute(res.indices, 1));
+    /* currentMesh.geometry.setIndex(new THREE.BufferAttribute(res.indices, 1));
     currentMesh.geometry = currentMesh.geometry.toNonIndexed();
-    currentMesh.geometry.computeVertexNormals();
+    currentMesh.geometry.computeVertexNormals(); */
     currentMesh.geometry.setDrawRange(0, Infinity);
 
     /* currentMesh.aabb = new THREE.Box3().setFromObject(currentMesh);
@@ -852,7 +916,7 @@ class Mesher {
 
     return currentMesh;
   }
-  async getChunk(x, y, z, lod) {
+  async getChunk(x, y, z) {
     const {currentMesh, packer, globalMaterial} = this;
 
     /* x *= voxelSize;
@@ -1379,6 +1443,9 @@ class MesherServer {
         const allocator = new Allocator();
 
         const {colorTextures: colorTexturesData, depthTextures: depthTexturesData, x, y, z, voxelWidth, voxelSize, voxelResolution, arrayBuffer} = data;
+
+        const colorTextures = allocator.alloc(Float32Array, colorTexturesData.length);
+        colorTextures.set(colorTexturesData);
         const depthTextures = allocator.alloc(Float32Array, depthTexturesData.length);
         depthTextures.set(depthTexturesData);
 
@@ -1386,7 +1453,7 @@ class MesherServer {
           x,
           y,
           z,
-          // colorTextures.offset,
+          colorTextures.offset,
           depthTextures.offset,
           voxelWidth,
           voxelSize,
@@ -1409,12 +1476,15 @@ class MesherServer {
         const {x, y, z, dims: dimsData, shift: shiftData, size: sizeData, arrayBuffer} = data;
 
         const positions = allocator.alloc(Float32Array, 1024*1024*Float32Array.BYTES_PER_ELEMENT);
-        const indices = allocator.alloc(Uint32Array, 1024*1024*Uint32Array.BYTES_PER_ELEMENT);
+        const normals = allocator.alloc(Uint32Array, 1024*1024*Uint32Array.BYTES_PER_ELEMENT);
+        const barycentrics = allocator.alloc(Uint32Array, 1024*1024*Uint32Array.BYTES_PER_ELEMENT);
 
         const numPositions = allocator.alloc(Uint32Array, 1);
         numPositions[0] = positions.length;
-        const numIndices = allocator.alloc(Uint32Array, 1);
-        numIndices[0] = indices.length;
+        const numNormals = allocator.alloc(Uint32Array, 1);
+        numNormals[0] = normals.length;
+        const numBarycentrics = allocator.alloc(Uint32Array, 1);
+        numBarycentrics[0] = barycentrics.length;
 
         const dims = allocator.alloc(Int32Array, 3);
         dims.set(Int32Array.from(dimsData));
@@ -1433,18 +1503,22 @@ class MesherServer {
           shift.offset,
           size.offset,
           positions.offset,
-          indices.offset,
+          normals.offset,
+          barycentrics.offset,
           numPositions.offset,
-          numIndices.offset
+          numNormals.offset,
+          numBarycentrics.offset
         );
 
-        console.log('out num positions', numPositions, numPositions.byteOffset, numPositions[0], numIndices[0]);
+        console.log('out num positions', numPositions, numPositions.byteOffset, numPositions[0], numNormals[0], numBarycentrics[0]);
 
         const arrayBuffer2 = new ArrayBuffer(
           Uint32Array.BYTES_PER_ELEMENT +
           numPositions[0]*Float32Array.BYTES_PER_ELEMENT +
           Uint32Array.BYTES_PER_ELEMENT +
-          numIndices[0]*Uint32Array.BYTES_PER_ELEMENT
+          numNormals[0]*Uint32Array.BYTES_PER_ELEMENT +
+          Uint32Array.BYTES_PER_ELEMENT +
+          numBarycentrics[0]*Uint32Array.BYTES_PER_ELEMENT
         );
         let index = 0;
 
@@ -1452,14 +1526,19 @@ class MesherServer {
         outP.set(new Float32Array(positions.buffer, positions.byteOffset, numPositions[0]));
         index += Float32Array.BYTES_PER_ELEMENT * numPositions[0];
 
-        const outI = new Uint32Array(arrayBuffer2, index, numIndices[0]);
-        outI.set(new Uint32Array(indices.buffer, indices.byteOffset, numIndices[0]));
-        index += Uint32Array.BYTES_PER_ELEMENT * numIndices[0];
+        const outN = new Float32Array(arrayBuffer2, index, numNormals[0]);
+        outN.set(new Float32Array(normals.buffer, normals.byteOffset, numNormals[0]));
+        index += Float32Array.BYTES_PER_ELEMENT * numNormals[0];
+
+        const outB = new Float32Array(arrayBuffer2, index, numBarycentrics[0]);
+        outB.set(new Float32Array(barycentrics.buffer, barycentrics.byteOffset, numBarycentrics[0]));
+        index += Float32Array.BYTES_PER_ELEMENT * numBarycentrics[0];
 
         self.postMessage({
           result: {
             positions: outP,
-            indices: outI,
+            normals: outN,
+            barycentrics: outB,
             arrayBuffer,
           },
         }, [arrayBuffer, arrayBuffer2]);

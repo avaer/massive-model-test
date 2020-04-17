@@ -457,13 +457,12 @@ let meshes = [];
 
   mesher.initVoxelize(50, 5, 3);
 
-  const lod = 10000;
   for (let x = -1; x < 1; x++) {
     for (let z = -1; z < 1; z++) {
       /* let x = -1;
       let y = 0;
       let z = -1; */
-      const mesh = await mesher.getChunk(x, 0, z, lod);
+      const mesh = await mesher.getChunk(x, 0, z);
       // ms.forEach(mesh => {
         container.add(mesh);
         meshes.push(mesh);
