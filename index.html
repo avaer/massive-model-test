@@ -322,6 +322,20 @@ let meshes = [];
 
   {
     const p = makePromise();
+    new GLTFLoader(manager).load('models/mountain.glb', p.accept, function onProgress() {}, p.reject);
+    const o = await p;
+    mesher.addMesh(o.scene);
+  }
+
+  {
+    const p = makePromise();
+    new GLTFLoader(manager).load('models/building.glb', p.accept, function onProgress() {}, p.reject);
+    const o = await p;
+    mesher.addMesh(o.scene);
+  }
+
+  {
+    const p = makePromise();
     new GLTFLoader(manager).load('models/model.vrm', p.accept, function onProgress() {}, p.reject);
     const o = await p;
     mesher.addMesh(o.scene);
