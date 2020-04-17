@@ -25,11 +25,25 @@ let renderer = null;
 let xrRaycaster = null;
 const scene = new THREE.Scene();
 // scene.autoUpdate = false;
+
+const ambientLight = new THREE.AmbientLight(0xFFFFFF);
+scene.add(ambientLight);
+
+const directionalLight = new THREE.DirectionalLight(0xFFFFFF, 3);
+directionalLight.position.set(0.5, 1, 0.5).multiplyScalar(100);
+/* directionalLight.castShadow = true;
+directionalLight.shadow.mapSize.width = 1024;
+directionalLight.shadow.mapSize.height = 1024;
+directionalLight.shadow.camera.near = 0.5;
+directionalLight.shadow.camera.far = 500; */
+scene.add(directionalLight);
+
+const directionalLight2 = new THREE.DirectionalLight(0xFFFFFF, 3);
+directionalLight2.position.set(-0.5, -0.1, 0.5).multiplyScalar(100);
+scene.add(directionalLight2);
+
 const depthMaterial = (() => {
   const depthVsh = `
-    // uniform float uAnimation;
-    // attribute float typex;
-    // varying vec3 vPosition;
     void main() {
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.);
     }
@@ -37,13 +51,6 @@ const depthMaterial = (() => {
   const depthFsh = `
     uniform float uNear;
     uniform float uFar;
-    /* vec4 encodePixelDepth( float v ) {
-      vec4 enc = vec4(1.0, 255.0, 65025.0, 16581375.0) * v;
-      enc = fract(enc);
-      // enc -= enc.xyzw * vec4(1.0/255.0,1.0/255.0,1.0/255.0,1.0/255.0);
-      return enc;
-    } */
-    // const float infinity = 1./0.;
     vec4 encodePixelDepth( float v ) {
       float x = fract(v);
       v -= x;
@@ -85,7 +92,7 @@ const depthMaterial = (() => {
   });
 })();
 const raycasterCamera = new THREE.PerspectiveCamera();
-const _onColorRender = ({target, near, far, matrixWorld, projectionMatrix}) => {
+const _onColorRender = ({target, near, far, width, height, matrixWorld, projectionMatrix}) => {
   raycasterCamera.near = near;
   raycasterCamera.far = far;
   raycasterCamera.matrixWorld.fromArray(matrixWorld).decompose(raycasterCamera.position, raycasterCamera.quaternion, raycasterCamera.scale);
@@ -105,7 +112,10 @@ const _onColorRender = ({target, near, far, matrixWorld, projectionMatrix}) => {
     // const oldClearAlpha = renderer.getClearAlpha();
     renderer.setRenderTarget(target);
 
+    renderer.setClearColor(new THREE.Color(0, 0, 0), 0);
+    // renderer.setViewport(0, 0, width, height);
     renderer.render(scene, raycasterCamera);
+    // !renderer.domElement.parent && document.body.appendChild(renderer.domElement);
 
     // scene.overrideMaterial = null;
     // renderer.vr.enabled = oldVrEnabled;
@@ -116,7 +126,7 @@ const _onColorRender = ({target, near, far, matrixWorld, projectionMatrix}) => {
     renderer.setRenderTarget(null);
   }
 };
-const _onDepthRender = ({target, near, far, matrixWorld, projectionMatrix}) => {
+const _onDepthRender = ({target, near, far, width, height, pixelRatio, matrixWorld, projectionMatrix}) => {
   raycasterCamera.near = near;
   raycasterCamera.far = far;
   raycasterCamera.matrixWorld.fromArray(matrixWorld).decompose(raycasterCamera.position, raycasterCamera.quaternion, raycasterCamera.scale);
@@ -136,6 +146,8 @@ const _onDepthRender = ({target, near, far, matrixWorld, projectionMatrix}) => {
     // const oldClearAlpha = renderer.getClearAlpha();
     renderer.setRenderTarget(target);
 
+    renderer.setClearColor(new THREE.Color(0, 0, 0), 1);
+    // renderer.setViewport(0, 0, width*pixelRatio, height*pixelRatio);
     renderer.render(scene, raycasterCamera);
 
     scene.overrideMaterial = null;
@@ -151,10 +163,13 @@ const _onDepthRender = ({target, near, far, matrixWorld, projectionMatrix}) => {
 const makeGlobalMaterial = () => new THREE.ShaderMaterial({
   uniforms: {},
   vertexShader: `\
+    attribute vec3 color;
     attribute vec3 barycentric;
     varying vec3 vPosition;
+    varying vec3 vColor;
     varying vec3 vBC;
     void main() {
+      vColor = color;
       vBC = barycentric;
       vec4 modelViewPosition = modelViewMatrix * vec4(position, 1.0);
       vPosition = modelViewPosition.xyz;
@@ -164,8 +179,9 @@ const makeGlobalMaterial = () => new THREE.ShaderMaterial({
   fragmentShader: `\
     uniform sampler2D uCameraTex;
     varying vec3 vPosition;
+    varying vec3 vColor;
     varying vec3 vBC;
-    vec3 color = vec3(0.984313725490196, 0.5490196078431373, 0.0);
+    // vec3 color = vec3(0.984313725490196, 0.5490196078431373, 0.0);
     vec3 lightDirection = vec3(0.0, 0.0, 1.0);
     float edgeFactor() {
       vec3 d = fwidth(vBC);
@@ -173,13 +189,13 @@ const makeGlobalMaterial = () => new THREE.ShaderMaterial({
       return min(min(a3.x, a3.y), a3.z);
     }
     void main() {
+      vec3 color = vColor;
       float barycentricFactor = (0.2 + (1.0 - edgeFactor()) * 0.8);
       vec3 xTangent = dFdx( vPosition );
       vec3 yTangent = dFdy( vPosition );
       vec3 faceNormal = normalize( cross( xTangent, yTangent ) );
       float lightFactor = dot(faceNormal, lightDirection);
       gl_FragColor = vec4((0.5 + color * barycentricFactor) * lightFactor, 0.5 + barycentricFactor * 0.5);
-      // gl_FragColor = vec4((0.5 + color * barycentricFactor) * lightFactor, 1.0);
     }
   `,
   // side: THREE.BackSide,
@@ -739,11 +755,10 @@ class Mesher {
     voxelSize = newSize;
     voxelResolution = voxelSize / voxelWidth;
     pixelRatio = newPixelRatio;
-    canvas = new OffscreenCanvas(voxelWidth * pixelRatio, voxelWidth * pixelRatio);
+    canvas = new OffscreenCanvas(1, 1);
     renderer = new THREE.WebGLRenderer({
       canvas,
     });
-    renderer.setClearColor(new THREE.Color(0, 0, 0), 1);
     // document.body.appendChild(renderer.domElement);
     xrRaycaster = new XRRaycaster({
       width: voxelWidth,
@@ -825,6 +840,13 @@ class Mesher {
           xrRaycaster.updateColorBuffer();
           const colorTexture = xrRaycaster.getColorBufferPixels();
           colorTextures.set(colorTexture, startIndex);
+
+          /* const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          const imageData = ctx.createImageData(voxelWidth, voxelWidth);
+          imageData.data.set(colorTexture);
+          ctx.putImageData(imageData, 0, 0);
+          document.body.appendChild(canvas); */
         }
       });
 
@@ -888,15 +910,16 @@ class Mesher {
     const {currentMesh} = this;
     currentMesh.geometry.setAttribute('position', new THREE.BufferAttribute(res.positions, 3));
     currentMesh.geometry.setAttribute('normal', new THREE.BufferAttribute(res.normals, 3));
+    currentMesh.geometry.setAttribute('color', new THREE.BufferAttribute(res.colors, 3));
     currentMesh.geometry.setAttribute('barycentric', new THREE.BufferAttribute(res.barycentrics, 3));
-    const c = new THREE.Color(Math.random(), Math.random(), Math.random());
+    /* const c = new THREE.Color(Math.random(), Math.random(), Math.random());
     const cs = new Float32Array(res.positions.length);
     for (let i = 0; i < res.positions.length; i += 3) {
       cs[i] = c.r;
       cs[i+1] = c.g;
       cs[i+2] = c.b;
     }
-    currentMesh.geometry.setAttribute('color', new THREE.BufferAttribute(cs, 3));
+    currentMesh.geometry.setAttribute('color', new THREE.BufferAttribute(cs, 3)); */
     currentMesh.geometry.deleteAttribute('uv', undefined);
     currentMesh.geometry.deleteAttribute('id', undefined);
     /* currentMesh.geometry.setIndex(new THREE.BufferAttribute(res.indices, 1));
@@ -1476,13 +1499,16 @@ class MesherServer {
         const {x, y, z, dims: dimsData, shift: shiftData, size: sizeData, arrayBuffer} = data;
 
         const positions = allocator.alloc(Float32Array, 1024*1024*Float32Array.BYTES_PER_ELEMENT);
-        const normals = allocator.alloc(Uint32Array, 1024*1024*Uint32Array.BYTES_PER_ELEMENT);
-        const barycentrics = allocator.alloc(Uint32Array, 1024*1024*Uint32Array.BYTES_PER_ELEMENT);
+        const normals = allocator.alloc(Float32Array, 1024*1024*Float32Array.BYTES_PER_ELEMENT);
+        const colors = allocator.alloc(Float32Array, 1024*1024*Float32Array.BYTES_PER_ELEMENT);
+        const barycentrics = allocator.alloc(Float32Array, 1024*1024*Float32Array.BYTES_PER_ELEMENT);
 
         const numPositions = allocator.alloc(Uint32Array, 1);
         numPositions[0] = positions.length;
         const numNormals = allocator.alloc(Uint32Array, 1);
         numNormals[0] = normals.length;
+        const numColors = allocator.alloc(Uint32Array, 1);
+        numColors[0] = colors.length;
         const numBarycentrics = allocator.alloc(Uint32Array, 1);
         numBarycentrics[0] = barycentrics.length;
 
@@ -1504,6 +1530,7 @@ class MesherServer {
           size.offset,
           positions.offset,
           normals.offset,
+          colors.offset,
           barycentrics.offset,
           numPositions.offset,
           numNormals.offset,
@@ -1518,6 +1545,8 @@ class MesherServer {
           Uint32Array.BYTES_PER_ELEMENT +
           numNormals[0]*Uint32Array.BYTES_PER_ELEMENT +
           Uint32Array.BYTES_PER_ELEMENT +
+          numColors[0]*Uint32Array.BYTES_PER_ELEMENT +
+          Uint32Array.BYTES_PER_ELEMENT +
           numBarycentrics[0]*Uint32Array.BYTES_PER_ELEMENT
         );
         let index = 0;
@@ -1530,6 +1559,10 @@ class MesherServer {
         outN.set(new Float32Array(normals.buffer, normals.byteOffset, numNormals[0]));
         index += Float32Array.BYTES_PER_ELEMENT * numNormals[0];
 
+        const outC = new Float32Array(arrayBuffer2, index, numColors[0]);
+        outC.set(new Float32Array(colors.buffer, colors.byteOffset, numColors[0]));
+        index += Float32Array.BYTES_PER_ELEMENT * numColors[0];
+
         const outB = new Float32Array(arrayBuffer2, index, numBarycentrics[0]);
         outB.set(new Float32Array(barycentrics.buffer, barycentrics.byteOffset, numBarycentrics[0]));
         index += Float32Array.BYTES_PER_ELEMENT * numBarycentrics[0];
@@ -1538,6 +1571,7 @@ class MesherServer {
           result: {
             positions: outP,
             normals: outN,
+            colors: outC,
             barycentrics: outB,
             arrayBuffer,
           },
