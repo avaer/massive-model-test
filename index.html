@@ -475,8 +475,8 @@ let meshes = [];
   mesher.initVoxelize(voxelWidth, voxelSize, pixelRatio);
 
   const currentPos = new THREE.Vector3(0, 0, 0);
-  let lod = 0;
-  // for (let lod = 0; lod < 3; lod++) {
+  // for (let lod = 1; lod < 3; lod++) {
+    let lod = 1;
     const lodVoxelSize = voxelSize * (2**lod);
     const lodBaseChunk = new THREE.Vector3(Math.floor(currentPos.x/lodVoxelSize), Math.floor(currentPos.y/lodVoxelSize), Math.floor(currentPos.z/lodVoxelSize));
     for (let x = 0; x < 2; x++) {
@@ -484,11 +484,9 @@ let meshes = [];
         /* let x = -1;
         let y = 0;
         let z = -1; */
-        if (lod === 0 || x !== 0 || z !== 0) {
-          const mesh = await mesher.getChunk(lodBaseChunk.x+x, 0, lodBaseChunk.z+z, lod);
-          container.add(mesh);
-          meshes.push(mesh);
-        }
+        const mesh = await mesher.getChunk(lodBaseChunk.x+x, 0, lodBaseChunk.z+z, lod);
+        container.add(mesh);
+        meshes.push(mesh);
       }
     }
   // }

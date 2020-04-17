@@ -751,7 +751,7 @@ class Mesher {
     y = Math.floor(y/lodVoxelWidth);
     z = Math.floor(z/lodVoxelWidth);
 
-    const k = x + ':' + y + ':' + z;
+    const k = x + ':' + y + ':' + z + ':' + lod;
     const depthBufferPixels = this.dbpCache[k];
     if (!depthBufferPixels) {
       const ax = x * lodVoxelSize + lodVoxelSize/2;
