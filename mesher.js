@@ -226,7 +226,7 @@ class Mesher {
         NUM_POSITIONS*Uint32Array.BYTES_PER_ELEMENT;
       this.arrayBuffer = new ArrayBuffer(arrayBufferSize);
     }
-    const {arrayBuffer} = this;
+    /* const {arrayBuffer} = this;
     let index = 0;
 
     const positions = new Float32Array(arrayBuffer, index, NUM_POSITIONS*3);
@@ -242,10 +242,10 @@ class Mesher {
     index += Float32Array.BYTES_PER_ELEMENT * NUM_POSITIONS*2;
 
     const ids = new Uint32Array(arrayBuffer, index, NUM_POSITIONS);
-    index += Uint32Array.BYTES_PER_ELEMENT * NUM_POSITIONS;
+    index += Uint32Array.BYTES_PER_ELEMENT * NUM_POSITIONS; */
 
     const geometry = new THREE.BufferGeometry();
-    const positionsAttribute = new THREE.BufferAttribute(positions, 3);
+    /* const positionsAttribute = new THREE.BufferAttribute(positions, 3);
     geometry.setAttribute('position', positionsAttribute);
     const normalsAttribute = new THREE.BufferAttribute(normals, 3);
     geometry.setAttribute('normal', normalsAttribute);
@@ -255,7 +255,7 @@ class Mesher {
     geometry.setAttribute('uv', uvsAttribute);
     const idsAttribute = new THREE.BufferAttribute(ids, 1);
     geometry.setAttribute('id', idsAttribute);
-    geometry.setDrawRange(0, 0);
+    geometry.setDrawRange(0, 0); */
 
     this.globalMaterial = makeGlobalMaterial();
 
@@ -688,31 +688,27 @@ class Mesher {
       onRender: _renderRaycaster,
     });
   }
-  getDepthBufferPixels(x, y, z) {
+  async getDepthBufferPixels(x, y, z) {
     x = Math.floor(x/voxelWidth);
     y = Math.floor(y/voxelWidth);
     z = Math.floor(z/voxelWidth);
 
     const k = x + ':' + y + ':' + z;
     const depthBufferPixels = this.dbpCache[k];
-    if (depthBufferPixels) {
-      return depthBufferPixels;
-    } else {
-      x = x * voxelSize + voxelSize/2;
-      y = y * voxelSize + voxelSize/2;
-      z = z * voxelSize + voxelSize/2;
+    if (!depthBufferPixels) {
+      const ax = x * voxelSize + voxelSize/2;
+      const ay = y * voxelSize + voxelSize/2;
+      const az = z * voxelSize + voxelSize/2;
 
-      // console.log('got k a', k, x, y, z);
-      const dbp = new Float32Array(voxelWidth*voxelWidth*voxelWidth);
-      dbp.fill(-1);
-      // const start = Date.now();
+      const depthTextures = new Float32Array(voxelWidth*voxelWidth*6);
+      let index = 0;
       [
-        [x, y, z + voxelSize/2, 0, 0],
-        [x + voxelSize/2, y, z, Math.PI/2, 0],
-        [x, y, z - voxelSize/2, Math.PI/2*2, 0],
-        [x - voxelSize/2, y, z, Math.PI/2*3, 0],
-        [x, y + voxelSize/2, z, 0, -Math.PI/2],
-        [x, y - voxelSize/2, z, 0, Math.PI/2],
+        [ax, ay, az + voxelSize/2, 0, 0],
+        [ax + voxelSize/2, ay, az, Math.PI/2, 0],
+        [ax, ay, az - voxelSize/2, Math.PI/2*2, 0],
+        [ax - voxelSize/2, ay, az, Math.PI/2*3, 0],
+        [ax, ay + voxelSize/2, az, 0, -Math.PI/2],
+        [ax, ay - voxelSize/2, az, 0, Math.PI/2],
       ].forEach(([x, y, z, ry, rx]) => {
         // debugger;
         if (ry !== 0) {
@@ -727,42 +723,25 @@ class Mesher {
         // await XRRaycaster.nextFrame();
         xrRaycaster.updateDepthBuffer();
         xrRaycaster.updateDepthBufferPixels();
-        const depthBufferPixels = xrRaycaster.getDepthBufferPixels();
-
-        /* x = mod(x, voxelSize);
-        y = mod(y, voxelSize);
-        z = mod(z, voxelSize); */
-
-        const _f = () => {
-          for (let u = 0; u < voxelWidth; u++) {
-            for (let v = 0; v < voxelWidth; v++) {
-              const p = localVector.set(x, y, z)
-                .add(
-                  localVector2
-                    .set(-voxelSize/2 + voxelResolution/2 + u*voxelResolution, -voxelSize/2 + voxelResolution/2 + v*voxelResolution, -voxelResolution/2)
-                    .applyQuaternion(localQuaternion)
-                  );
-              p.x = mod(Math.floor(p.x/voxelResolution), voxelWidth);
-              p.y = mod(Math.floor(p.y/voxelResolution), voxelWidth);
-              p.z = mod(Math.floor(p.z/voxelResolution), voxelWidth);
-              const increment = localVector2.set(0, 0, -1).applyQuaternion(localQuaternion);
-              let depth = depthBufferPixels[u + v*voxelWidth];
-              depth -= voxelResolution/2;
-              for (let d = voxelResolution/2; d < depth && d < voxelSize; d += voxelResolution, p.add(increment)) {
-                dbp[p.x + p.y*voxelWidth*voxelWidth + p.z*voxelWidth] = 0.3;
-              }
-            }
-          }
-          /* if (depthBufferPixels.filter(n => n < Infinity).length > 3) {
-            debugger;
-          } */
-        };
-        _f();
+        const depthTexture = xrRaycaster.getDepthBufferPixels();
+        depthTextures.set(depthTexture, index*voxelWidth*voxelWidth);
+        index++;
       });
-      // const end = Date.now();
-      // console.log('got k b', k, x, y, z, end - start);
-      this.dbpCache[k] = dbp;
-      return dbp;
+
+      this.reset();
+
+      const {arrayBuffer} = this;
+      this.arrayBuffer = null;
+      const res = await this.worker.request({
+        method: 'pushChunkTexture',
+        textures: depthTextures,
+        x, y, z, voxelWidth, voxelSize, voxelResolution,
+        arrayBuffer,
+      }, [arrayBuffer]);
+      // console.log('got res', res);
+      this.arrayBuffers.push(res.arrayBuffer);
+
+      this.dbpCache[k] = true;
     }
   }
   async voxelize(x, y, z, meshes) {
@@ -777,36 +756,16 @@ class Mesher {
       scene.add(m);
     });
 
-    const voxelWidthP2 = voxelWidth + 2;
-    const potentials = new Float32Array(voxelWidthP2 * voxelWidthP2 * voxelWidthP2);
-    potentials.fill(0.15);
-
-    // const v = new THREE.Vector3(x + voxelSize/2, y + voxelSize/2, z + voxelSize/2);
-    // const originalZ = z;
-
-    x *= voxelWidth;
-    y *= voxelWidth;
-    z *= voxelWidth;
-
-    console.log('vox 1');
-    // const maxDistance = Math.sqrt(3);
-    for (let iz = 0; iz < voxelWidthP2; iz++) {
-      for (let ix = 0; ix < voxelWidthP2; ix++) {
-        for (let iy = 0; iy < voxelWidthP2; iy++) {
-          const ax = x + ix - 1;
-          const ay = y + iy - 1;
-          const az = z + iz - 1;
-          const depthBufferPixels = this.getDepthBufferPixels(ax, ay, az);
-          const nx = mod(ax, voxelWidth);
-          const ny = mod(ay, voxelWidth);
-          const nz = mod(az, voxelWidth);
-          const srcIndex = nx + ny*voxelWidth*voxelWidth + nz*voxelWidth;
-          const dstIndex = ix + iy*voxelWidthP2*voxelWidthP2 + iz*voxelWidthP2;
-          potentials[dstIndex] = depthBufferPixels[srcIndex];
+    for (let iz = -1; iz <= 1; iz++) {
+      for (let ix = -1; ix <= 1; ix++) {
+        for (let iy = -1; iy <= 1; iy++) {
+          const ax = (x+ix) * voxelWidth;
+          const ay = (y+iy) * voxelWidth;
+          const az = (z+iz) * voxelWidth;
+          await this.getDepthBufferPixels(ax, ay, az);
         }
       }
     }
-    console.log('vox 2');
 
     this.reset();
 
@@ -814,11 +773,13 @@ class Mesher {
     this.arrayBuffer = null;
     const res = await this.worker.request({
       method: 'marchPotentials',
-      potentials,
-      arrayBuffer,
-      dims: [voxelWidthP2, voxelWidthP2, voxelWidthP2],
-      shift: [-voxelResolution + x/voxelWidth*voxelSize, -voxelResolution + y/voxelWidth*voxelSize, -voxelResolution + z/voxelWidth*voxelSize],
+      x,
+      y,
+      z,
+      dims: [voxelWidth, voxelWidth, voxelWidth],
+      shift: [-voxelResolution + x*voxelSize, -voxelResolution + y*voxelSize, -voxelResolution + z*voxelSize],
       size: [voxelSize + 2*voxelResolution, voxelSize + 2*voxelResolution, voxelSize + 2*voxelResolution],
+      arrayBuffer,
     }, [arrayBuffer]);
     console.log('got res', res);
     this.arrayBuffers.push(res.arrayBuffer);
@@ -1376,13 +1337,35 @@ class MesherServer {
         allocator.freeAll();
         break;
       }
+      case 'pushChunkTexture': {
+        const allocator = new Allocator();
+
+        const {textures: texturesData, x, y, z, voxelWidth, voxelSize, voxelResolution, arrayBuffer} = data;
+        const textures = allocator.alloc(Float32Array, texturesData.length);
+        textures.set(texturesData);
+
+        self.Module._doPushChunkTexture(
+          x,
+          y,
+          z,
+          textures.offset,
+          voxelWidth,
+          voxelSize,
+          voxelResolution,
+        );
+
+        self.postMessage({
+          result: {
+            arrayBuffer,
+          },
+        }, [arrayBuffer]);
+        allocator.freeAll();
+        break;
+      }
       case 'marchPotentials': {
         const allocator = new Allocator();
 
-        const {potentials: potentialsData, dims: dimsData, shift: shiftData, size: sizeData, arrayBuffer} = data;
-
-        const potentials = allocator.alloc(Float32Array, 1024*1024*Float32Array.BYTES_PER_ELEMENT);
-        potentials.set(potentialsData);
+        const {x, y, z, dims: dimsData, shift: shiftData, size: sizeData, arrayBuffer} = data;
 
         const positions = allocator.alloc(Float32Array, 1024*1024*Float32Array.BYTES_PER_ELEMENT);
         const indices = allocator.alloc(Uint32Array, 1024*1024*Uint32Array.BYTES_PER_ELEMENT);
@@ -1392,8 +1375,8 @@ class MesherServer {
         const numIndices = allocator.alloc(Uint32Array, 1);
         numIndices[0] = indices.length;
 
-        const dims = allocator.alloc(Uint32Array, 3);
-        dims.set(Uint32Array.from(dimsData));
+        const dims = allocator.alloc(Int32Array, 3);
+        dims.set(Int32Array.from(dimsData));
 
         const shift = allocator.alloc(Float32Array, 3);
         shift.set(Float32Array.from(shiftData));
@@ -1402,15 +1385,19 @@ class MesherServer {
         size.set(Float32Array.from(sizeData));
 
         self.Module._doMarchPotentials(
+          x,
+          y,
+          z,
           dims.offset,
           shift.offset,
           size.offset,
-          potentials.offset,
           positions.offset,
           indices.offset,
           numPositions.offset,
           numIndices.offset
         );
+
+        console.log('out num positions', numPositions, numPositions.byteOffset, numPositions[0], numIndices[0]);
 
         const arrayBuffer2 = new ArrayBuffer(
           Uint32Array.BYTES_PER_ELEMENT +
