@@ -52,7 +52,7 @@ export class XRRaycaster {
     this.colorTargetDepthBuf = colorTargetDepthBuf;
     /* const colorTargetCoordBuf = new Float32Array(width*pixelRatio*height*pixelRatio*3); // decoded xyz points
     this.colorTargetCoordBuf = colorTargetCoordBuf; */
-    colorTarget.updateView = (x, y, z, q) => {
+    depthTarget.updateView = (x, y, z, q) => {
       // const position = localVector.fromArray(p);
       // const quaternion = localQuaternion.fromArray(q);
 
@@ -64,7 +64,7 @@ export class XRRaycaster {
         // colorTarget.fresh = false;
       }
     };
-    colorTarget.updateDepthTexture = () => {
+    depthTarget.updateDepthTexture = () => {
       // if (!colorTarget.fresh) {
         onDepthRender({
           target: depthTarget,
@@ -80,7 +80,7 @@ export class XRRaycaster {
         // colorTarget.freshDepthBuf = false;
       // }
     };
-    colorTarget.updateDepthBuffer = () => {
+    depthTarget.updateDepthBuffer = () => {
       // if (!colorTarget.freshDepthBuf) {
         renderer.readRenderTargetPixels(depthTarget, 0, 0, width * pixelRatio, height * pixelRatio, colorTargetDepthBuf, 0);
         // console.log('got raw depth buf', colorTargetDepthBuf);
@@ -104,7 +104,7 @@ export class XRRaycaster {
       // console.log('use camera matrix world', camera.matrixWorld.toArray().join(','));
       return origins;
     })(); */
-    colorTarget.updateDepthBufferPixels = () => {
+    depthTarget.updateDepthBufferPixels = () => {
       // if (!colorTarget.freshCoordBuf) {
         // let index3 = 0;
         let index = 0;
@@ -133,11 +133,11 @@ export class XRRaycaster {
         // colorTarget.freshCoordBuf = true;
       }
     // };
-    colorTarget.getDepthBufferPixels = () => depthBufferPixels;
-    this.colorTarget = colorTarget;
+    depthTarget.getDepthBufferPixels = () => depthBufferPixels;
+    this.depthTarget = depthTarget;
   }
   getDepthTexture() {
-    return this.colorTarget.texture;
+    return this.depthTarget.texture;
   }
   getDepthBuffer() {
     return this.colorTargetDepthBuf;
@@ -165,32 +165,23 @@ export class XRRaycaster {
     }
   } */
   updateView(x, y, z, q) {
-    this.colorTarget.updateView(x, y, z, q);
-  }
-  updateColorTexture() {
-    this.colorTarget.updateColorTexture();
-  }
-  updateColorBuffer() {
-    this.colorTarget.updateColorBuffer();
-  }
-  getColorBufferPixels() {
-    return this.colorTarget.getColorBufferPixels();
+    this.depthTarget.updateView(x, y, z, q);
   }
   updateDepthTexture() {
-    this.colorTarget.updateDepthTexture();
+    this.depthTarget.updateDepthTexture();
   }
   updateDepthBuffer() {
-    this.colorTarget.updateDepthBuffer();
+    this.depthTarget.updateDepthBuffer();
   }
   updateDepthBufferPixels() {
-    this.colorTarget.updateDepthBufferPixels();
+    this.depthTarget.updateDepthBufferPixels();
   }
   getDepthBufferPixels() {
-    return this.colorTarget.getDepthBufferPixels();
+    return this.depthTarget.getDepthBufferPixels();
   }
-  render() {
-    this.colorTarget.fresh = false;
-  }
+  /* render() {
+    this.depthTarget.fresh = false;
+  } */
   static decodePixelDepth(rgba, i) {
     return rgba[i] +
       rgba[i+1] * 255.0 +
