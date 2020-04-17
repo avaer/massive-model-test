@@ -53,7 +53,7 @@ export class XRRaycaster {
     /* const colorTargetCoordBuf = new Float32Array(width*pixelRatio*height*pixelRatio*3); // decoded xyz points
     this.colorTargetCoordBuf = colorTargetCoordBuf; */
     depthTarget.updateLod = (voxelSize, lod) => {
-      const lodVoxelSize = voxelSize * (2**lod);
+      const lodVoxelSize = voxelSize * (3**lod);
       camera = new THREE.OrthographicCamera(
         lodVoxelSize / -2, lodVoxelSize / 2,
         lodVoxelSize / 2, lodVoxelSize / -2,

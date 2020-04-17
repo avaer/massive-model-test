@@ -469,26 +469,65 @@ let meshes = [];
     return result;
   })(); */
 
-  const voxelWidth = 50;
-  const voxelSize = 5;
+  const voxelWidth = 10;
+  const voxelSize = 1;
   const pixelRatio = 3;
   mesher.initVoxelize(voxelWidth, voxelSize, pixelRatio);
 
+  // const lodBaseChunk = new THREE.Vector3(Math.floor(currentPos.x/voxelSize), Math.floor(currentPos.y/voxelSize), Math.floor(currentPos.z/voxelSize));
+  /* const lods = [
+    {
+      x: lodBaseChunk.x,
+      z: lodBaseChunk.z,
+      lod: 0,
+    },
+    {
+      x: lodBaseChunk.x + voxelSize,
+      z: lodBaseChunk.z,
+      lod: 0,
+    },
+    {
+      x: lodBaseChunk.x,
+      z: lodBaseChunk.z + voxelSize,
+      lod: 0,
+    },
+    {
+      x: lodBaseChunk.x + voxelSize,
+      z: lodBaseChunk.z + voxelSize,
+      lod: 0,
+    },
+  ]; */
   const currentPos = new THREE.Vector3(0, 0, 0);
-  // for (let lod = 1; lod < 3; lod++) {
-    let lod = 1;
-    const lodVoxelSize = voxelSize * (2**lod);
+  const lods = [];
+  let offset = 0;
+  for (let lod = 0; lod < 2; lod++) {
+    const lodVoxelSize = voxelSize * (3**lod);
     const lodBaseChunk = new THREE.Vector3(Math.floor(currentPos.x/lodVoxelSize), Math.floor(currentPos.y/lodVoxelSize), Math.floor(currentPos.z/lodVoxelSize));
-    for (let x = 0; x < 2; x++) {
-      for (let z = 0; z < 2; z++) {
-        /* let x = -1;
-        let y = 0;
-        let z = -1; */
-        const mesh = await mesher.getChunk(lodBaseChunk.x+x, 0, lodBaseChunk.z+z, lod);
-        container.add(mesh);
-        meshes.push(mesh);
+    for (let x = -1; x <= 1; x++) {
+      for (let z = -1; z <= 1; z++) {
+        for (let y = -1; y <= 1; y++) {
+          if (lod === 0 || x !== 0 || y !== 0 || z !== 0) {
+            lods.push({
+              x: lodBaseChunk.x + x,
+              y: lodBaseChunk.y + y,
+              z: lodBaseChunk.z + z,
+              offset,
+              lod,
+            });
+          }
+        }
       }
     }
+    offset -= lodVoxelSize;
+  }
+    
+    
+  for (let i = 0; i < lods.length; i++) {
+    const {x, y, z, offset, lod} = lods[i];
+    const mesh = await mesher.getChunk(x, y, z, offset, offset, offset, lod);
+    container.add(mesh);
+    meshes.push(mesh);
+  }
   // }
   /* const _testMesh = async m => {
     const ab = await _serializeMesh(m);

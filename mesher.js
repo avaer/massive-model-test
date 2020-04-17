@@ -255,12 +255,12 @@ class Mesher {
     this.reset();
   }
   reset() {
-    this.positionsIndex = 0;
+    /* this.positionsIndex = 0;
     this.normalsIndex = 0;
     this.colorsIndex = 0;
     this.uvsIndex = 0;
     this.idsIndex = 0;
-    this.currentId = 0;
+    this.currentId = 0; */
 
     if (!this.arrayBuffer) {
       this.arrayBuffer = this.arrayBuffers.pop();
@@ -310,7 +310,7 @@ class Mesher {
     const mesh = new THREE.Mesh(geometry, this.globalMaterial);
     mesh.frustumCulled = false;
     this.currentMesh = mesh;
-    this.packer = new maxrects.MaxRectsPacker(TEXTURE_SIZE, TEXTURE_SIZE, 0, {
+    /* this.packer = new maxrects.MaxRectsPacker(TEXTURE_SIZE, TEXTURE_SIZE, 0, {
       smart: true,
       pot: true,
       square: false,
@@ -319,7 +319,7 @@ class Mesher {
       // border: 10,
       border: 0,
     });
-    this.packer.images = [];
+    this.packer.images = []; */
   }
   pushAtlasImage(image, currentId) {
     let spec = this.packer.images.find(o => o.image === image);
@@ -690,14 +690,14 @@ class Mesher {
 
     return mesh;
   }
-  getMeshesInChunk(x, y, z, lod) {
-    const lodVoxelSize = voxelSize * (2**lod);
+  getMeshesInChunk(x, y, z, offsetx, offsety, offsetz, lod) {
+    const lodVoxelSize = voxelSize * (3**lod);
     const lodVoxelWidth = voxelWidth;
-    const lodVoxelResolution = voxelResolution * (2**lod);
+    const lodVoxelResolution = voxelResolution * (3**lod);
 
     const aabb = new THREE.Box3(
-      new THREE.Vector3(x*lodVoxelSize, y*lodVoxelSize, z*lodVoxelSize),
-      new THREE.Vector3((x+1)*lodVoxelSize, (y+1)*lodVoxelSize, (z+1)*lodVoxelSize)
+      new THREE.Vector3(x*lodVoxelSize + offsetx, y*lodVoxelSize + offsety, z*lodVoxelSize + offsetz),
+      new THREE.Vector3((x+1)*lodVoxelSize + offsetx, (y+1)*lodVoxelSize + offsety, (z+1)*lodVoxelSize + offsetz)
     );
     // console.log('got aabbs', this.meshes.map(m => ([m.aabb.min.toArray(), m.aabb.max.toArray()])));
     return this.meshes.filter(m => m.aabb.intersectsBox(aabb));
@@ -742,21 +742,21 @@ class Mesher {
       onDepthRender: _onDepthRender,
     });
   }
-  async getBufferPixels(x, y, z, lod) {
-    const lodVoxelSize = voxelSize * (2**lod);
+  async getBufferPixels(x, y, z, offsetx, offsety, offsetz, lod) {
+    const lodVoxelSize = voxelSize * (3**lod);
     const lodVoxelWidth = voxelWidth;
-    const lodVoxelResolution = voxelResolution * (2**lod);
+    const lodVoxelResolution = voxelResolution * (3**lod);
 
-    x = Math.floor(x/lodVoxelWidth);
-    y = Math.floor(y/lodVoxelWidth);
-    z = Math.floor(z/lodVoxelWidth);
+    // x = Math.floor(x*lodVoxelSize/lodVoxelWidth);
+    // y = Math.floor(y*lodVoxelSize/lodVoxelWidth);
+    // z = Math.floor(z*lodVoxelSize/lodVoxelWidth);
 
     const k = x + ':' + y + ':' + z + ':' + lod;
     const depthBufferPixels = this.dbpCache[k];
     if (!depthBufferPixels) {
-      const ax = x * lodVoxelSize + lodVoxelSize/2;
-      const ay = y * lodVoxelSize + lodVoxelSize/2;
-      const az = z * lodVoxelSize + lodVoxelSize/2;
+      const ax = x * lodVoxelSize + lodVoxelSize/2 + offsetx;
+      const ay = y * lodVoxelSize + lodVoxelSize/2 + offsety;
+      const az = z * lodVoxelSize + lodVoxelSize/2 + offsetz;
 
       const o = Math.floor(pixelRatio/2);
 
@@ -827,90 +827,97 @@ class Mesher {
       this.dbpCache[k] = true;
     }
   }
-  async voxelize(x, y, z, lod, meshes) {
-    console.log('got meshes', meshes);
-    meshes.forEach(m => {
-      m.traverse(o => {
-        if (o.isMesh) {
-          o.frustumCulled = false;
-          o.isSkinnedMesh = false;
-        }
+  async voxelize(x, y, z, offsetx, offsety, offsetz, lod, meshes) {
+    if (this.meshes.length > 0) {
+      meshes.forEach(m => {
+        m.traverse(o => {
+          if (o.isMesh) {
+            o.frustumCulled = false;
+            o.isSkinnedMesh = false;
+          }
+        });
+        scene.add(m);
       });
-      scene.add(m);
-    });
 
-    const lodVoxelSize = voxelSize * (2**lod);
-    const lodVoxelWidth = voxelWidth;
-    const lodVoxelResolution = voxelResolution * (2**lod);
+      const lodVoxelSize = voxelSize * (3**lod);
+      const lodVoxelWidth = voxelWidth;
+      const lodVoxelResolution = voxelResolution * (3**lod);
 
-    for (let iz = -1; iz <= 1; iz++) {
-      for (let ix = -1; ix <= 1; ix++) {
-        for (let iy = -1; iy <= 1; iy++) {
-          const ax = (x+ix) * lodVoxelWidth;
-          const ay = (y+iy) * lodVoxelWidth;
-          const az = (z+iz) * lodVoxelWidth;
-          await this.getBufferPixels(ax, ay, az, lod);
+      for (let iz = -1; iz <= 1; iz++) {
+        for (let ix = -1; ix <= 1; ix++) {
+          for (let iy = -1; iy <= 1; iy++) {
+            // if (lod === 0 || ix !== 0 || iy !== 0 || iz !== 0) {
+              // const ax = (x+ix) * lodVoxelWidth;
+              // const ay = (y+iy) * lodVoxelWidth;
+              // const az = (z+iz) * lodVoxelWidth;
+              await this.getBufferPixels(x + ix, y + iy, z + iz, offsetx, offsety, offsetz, lod);
+            // }
+          }
         }
       }
+
+      this.reset();
+
+      // console.log('march potentials 1', x, y, z, lod);
+
+      const {arrayBuffer} = this;
+      this.arrayBuffer = null;
+      const res = await this.worker.request({
+        method: 'marchPotentials',
+        x,
+        y,
+        z,
+        lod,
+        dims: [lodVoxelWidth, lodVoxelWidth, lodVoxelWidth],
+        shift: [-lodVoxelResolution + x*lodVoxelSize + offsetx, -lodVoxelResolution + y*lodVoxelSize + offsety, -lodVoxelResolution + z*lodVoxelSize + offsety],
+        size: [lodVoxelSize + 2*lodVoxelResolution, lodVoxelSize + 2*lodVoxelResolution, lodVoxelSize + 2*lodVoxelResolution],
+        arrayBuffer,
+      }, [arrayBuffer]);
+      // console.log('got res', res);
+      this.arrayBuffers.push(res.arrayBuffer);
+
+      // console.log('march potentials 2', x, y, z, lod);
+
+      const {currentMesh} = this;
+      currentMesh.geometry.setAttribute('position', new THREE.BufferAttribute(res.positions, 3));
+      currentMesh.geometry.setAttribute('barycentric', new THREE.BufferAttribute(res.barycentrics, 3));
+      /* const c = new THREE.Color(Math.random(), Math.random(), Math.random());
+      const cs = new Float32Array(res.positions.length);
+      for (let i = 0; i < res.positions.length; i += 3) {
+        cs[i] = c.r;
+        cs[i+1] = c.g;
+        cs[i+2] = c.b;
+      }
+      currentMesh.geometry.setAttribute('color', new THREE.BufferAttribute(cs, 3)); */
+      currentMesh.geometry.deleteAttribute('uv', undefined);
+      currentMesh.geometry.deleteAttribute('id', undefined);
+      /* currentMesh.geometry.setIndex(new THREE.BufferAttribute(res.indices, 1));
+      currentMesh.geometry = currentMesh.geometry.toNonIndexed();
+      currentMesh.geometry.computeVertexNormals(); */
+      currentMesh.geometry.setDrawRange(0, Infinity);
+
+      /* currentMesh.aabb = new THREE.Box3().setFromObject(currentMesh);
+      currentMesh.aabb.min.x = Math.floor(currentMesh.aabb.min.x/CHUNK_SIZE)*CHUNK_SIZE;
+      currentMesh.aabb.max.x = Math.ceil(currentMesh.aabb.max.x/CHUNK_SIZE)*CHUNK_SIZE;
+      currentMesh.aabb.min.z = Math.floor(currentMesh.aabb.min.z/CHUNK_SIZE)*CHUNK_SIZE;
+      currentMesh.aabb.max.z = Math.ceil(currentMesh.aabb.max.z/CHUNK_SIZE)*CHUNK_SIZE; */
+      // currentMesh.packer = this.packer;
+
+      // currentMesh.x = 0;
+      // currentMesh.z = 0;
+
+      meshes.forEach(m => {
+        scene.remove(m);
+      });
     }
 
-    this.reset();
-
-    // console.log('march potentials 1', x, y, z, lod);
-
-    const {arrayBuffer} = this;
-    this.arrayBuffer = null;
-    const res = await this.worker.request({
-      method: 'marchPotentials',
-      x,
-      y,
-      z,
-      lod,
-      dims: [lodVoxelWidth, lodVoxelWidth, lodVoxelWidth],
-      shift: [-lodVoxelResolution + x*lodVoxelSize, -lodVoxelResolution + y*lodVoxelSize, -lodVoxelResolution + z*lodVoxelSize],
-      size: [lodVoxelSize + 2*lodVoxelResolution, lodVoxelSize + 2*lodVoxelResolution, lodVoxelSize + 2*lodVoxelResolution],
-      arrayBuffer,
-    }, [arrayBuffer]);
-    console.log('got res', res);
-    this.arrayBuffers.push(res.arrayBuffer);
-
-    // console.log('march potentials 2', x, y, z, lod);
-
-    const {currentMesh} = this;
-    currentMesh.geometry.setAttribute('position', new THREE.BufferAttribute(res.positions, 3));
-    currentMesh.geometry.setAttribute('barycentric', new THREE.BufferAttribute(res.barycentrics, 3));
-    /* const c = new THREE.Color(Math.random(), Math.random(), Math.random());
-    const cs = new Float32Array(res.positions.length);
-    for (let i = 0; i < res.positions.length; i += 3) {
-      cs[i] = c.r;
-      cs[i+1] = c.g;
-      cs[i+2] = c.b;
-    }
-    currentMesh.geometry.setAttribute('color', new THREE.BufferAttribute(cs, 3)); */
-    currentMesh.geometry.deleteAttribute('uv', undefined);
-    currentMesh.geometry.deleteAttribute('id', undefined);
-    /* currentMesh.geometry.setIndex(new THREE.BufferAttribute(res.indices, 1));
-    currentMesh.geometry = currentMesh.geometry.toNonIndexed();
-    currentMesh.geometry.computeVertexNormals(); */
-    currentMesh.geometry.setDrawRange(0, Infinity);
-
-    /* currentMesh.aabb = new THREE.Box3().setFromObject(currentMesh);
-    currentMesh.aabb.min.x = Math.floor(currentMesh.aabb.min.x/CHUNK_SIZE)*CHUNK_SIZE;
-    currentMesh.aabb.max.x = Math.ceil(currentMesh.aabb.max.x/CHUNK_SIZE)*CHUNK_SIZE;
-    currentMesh.aabb.min.z = Math.floor(currentMesh.aabb.min.z/CHUNK_SIZE)*CHUNK_SIZE;
-    currentMesh.aabb.max.z = Math.ceil(currentMesh.aabb.max.z/CHUNK_SIZE)*CHUNK_SIZE; */
-    currentMesh.packer = this.packer;
-
-    currentMesh.x = 0;
-    currentMesh.z = 0;
-
-    return currentMesh;
+    return this.currentMesh;
   }
-  async getChunk(x, y, z, lod) {
+  async getChunk(x, y, z, offsetx, offsety, offsetz, lod) {
     const {currentMesh, packer, globalMaterial} = this;
 
-    const meshes = this.getMeshesInChunk(x, y, z, lod);
-    return this.voxelize(x, y, z, lod, meshes);
+    const meshes = this.getMeshesInChunk(x, y, z, offsetx, offsety, offsetz, lod);
+    return this.voxelize(x, y, z, offsetx, offsety, offsetz, lod, meshes);
 
     const meshBudgets = this.getMeshBudgets(meshes);
 
@@ -1488,7 +1495,7 @@ class MesherServer {
           numBarycentrics.offset
         );
 
-        console.log('out num positions', numPositions[0], numBarycentrics[0]);
+        // console.log('out num positions', numPositions[0], numBarycentrics[0]);
 
         const arrayBuffer2 = new ArrayBuffer(
           Uint32Array.BYTES_PER_ELEMENT +
