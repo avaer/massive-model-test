@@ -500,12 +500,13 @@ let meshes = [];
   const currentPos = new THREE.Vector3(0, 0, 0);
   const lods = [];
   let offset = 0;
-  for (let lod = 0; lod < 2; lod++) {
+  // for (let lod = 0; lod < 2; lod++) {
+    let lod = 0;
     const lodVoxelSize = voxelSize * (3**lod);
     const lodBaseChunk = new THREE.Vector3(Math.floor(currentPos.x/lodVoxelSize), Math.floor(currentPos.y/lodVoxelSize), Math.floor(currentPos.z/lodVoxelSize));
-    for (let x = -1; x <= 1; x++) {
-      for (let z = -1; z <= 1; z++) {
-        for (let y = -1; y <= 1; y++) {
+    for (let x = -2; x <= 4; x++) {
+      for (let z = -3; z <= 3; z++) {
+        for (let y = -3; y <= 3; y++) {
           if (lod === 0 || x !== 0 || y !== 0 || z !== 0) {
             lods.push({
               x: lodBaseChunk.x + x,
@@ -519,12 +520,13 @@ let meshes = [];
       }
     }
     offset -= lodVoxelSize;
-  }
+  // }
     
     
   for (let i = 0; i < lods.length; i++) {
     const {x, y, z, offset, lod} = lods[i];
     const mesh = await mesher.getChunk(x, y, z, offset, offset, offset, lod);
+    // console.log('got chunk', x, y, z, mesh.geometry.attributes.position.array.length);
     container.add(mesh);
     meshes.push(mesh);
   }
