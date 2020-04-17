@@ -19,6 +19,7 @@ function mod(a, n) {
 let voxelWidth = 0;
 let voxelSize = 0;
 let voxelResolution = 0;
+let pixelRatio = 0;
 let canvas = null;
 let renderer = null;
 let xrRaycaster = null;
@@ -668,11 +669,12 @@ class Mesher {
       return budget;
     });
   }
-  initVoxelize(newWidth, newSize) {
+  initVoxelize(newWidth, newSize, newPixelRatio) {
     voxelWidth = newWidth;
     voxelSize = newSize;
     voxelResolution = voxelSize / voxelWidth;
-    canvas = new OffscreenCanvas(voxelWidth, voxelWidth);
+    pixelRatio = newPixelRatio;
+    canvas = new OffscreenCanvas(voxelWidth * pixelRatio, voxelWidth * pixelRatio);
     renderer = new THREE.WebGLRenderer({
       canvas,
     });
@@ -680,6 +682,7 @@ class Mesher {
     xrRaycaster = new XRRaycaster({
       width: voxelWidth,
       height: voxelWidth,
+      pixelRatio,
       cameraWidth: voxelSize,
       cameraHeight: voxelSize,
       near: 0.001,
@@ -700,8 +703,10 @@ class Mesher {
       const ay = y * voxelSize + voxelSize/2;
       const az = z * voxelSize + voxelSize/2;
 
-      const depthTextures = new Float32Array(voxelWidth*voxelWidth*6);
-      let index = 0;
+      const o = Math.floor(pixelRatio/2);
+
+      const depthTextures = new Float32Array(voxelWidth * voxelWidth * 6);
+      depthTextures.fill(Infinity);
       [
         [ax, ay, az + voxelSize/2, 0, 0],
         [ax + voxelSize/2, ay, az, Math.PI/2, 0],
@@ -709,7 +714,7 @@ class Mesher {
         [ax - voxelSize/2, ay, az, Math.PI/2*3, 0],
         [ax, ay + voxelSize/2, az, 0, -Math.PI/2],
         [ax, ay - voxelSize/2, az, 0, Math.PI/2],
-      ].forEach(([x, y, z, ry, rx]) => {
+      ].forEach(([x, y, z, ry, rx], i) => {
         // debugger;
         if (ry !== 0) {
           localQuaternion.setFromAxisAngle(localVector.set(0, 1, 0), ry);
@@ -724,8 +729,40 @@ class Mesher {
         xrRaycaster.updateDepthBuffer();
         xrRaycaster.updateDepthBufferPixels();
         const depthTexture = xrRaycaster.getDepthBufferPixels();
-        depthTextures.set(depthTexture, index*voxelWidth*voxelWidth);
-        index++;
+        /* if (depthTexture.some(n => n < Infinity)) {
+          debugger;
+        } */
+        const startIndex = i * voxelWidth * voxelWidth;
+        for (let x = 0; x < voxelWidth; x++) {
+          for (let y = 0; y < voxelWidth; y++) {
+            // for (let z = 0; z < voxelWidth; z++) {
+              let acc = Infinity;
+              for (let dx = -o; dx <= o; dx++) {
+                for (let dy = -o; dy <= o; dy++) {
+                  // for (let dz = -1; dz <= 1; dz++) {
+                    const ax = o + x*pixelRatio + dx;
+                    const ay = o + y*pixelRatio + dy;
+                    // const az = z + dz;
+                    if (ax >= 0 && ax < voxelWidth*pixelRatio && ay >= 0 && ay < voxelWidth*pixelRatio /*&& az >= 0 && az < voxelWidth*/) {
+                      const index = ax + ay*voxelWidth*pixelRatio;
+                      const v = depthTexture[index];
+                      acc = Math.min(acc, v);
+                    } else {
+                      debugger;
+                    }
+                  // }
+                }
+              }
+              if (acc < Infinity) {
+                const index = startIndex + x + y*voxelWidth;
+                depthTextures[index] = acc;
+              }
+            // }
+          }
+        }
+        /* if (depthTextures.some(n => n < Infinity)) {
+          debugger;
+        } */
       });
 
       this.reset();
@@ -1352,6 +1389,8 @@ class MesherServer {
           voxelWidth,
           voxelSize,
           voxelResolution,
+          1,
+          -1
         );
 
         self.postMessage({
