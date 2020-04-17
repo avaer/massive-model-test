@@ -688,10 +688,10 @@ class Mesher {
       near: 0.001,
       far: voxelSize,
       renderer,
-      onRender: _renderRaycaster,
+      onDepthRender: _renderRaycaster,
     });
   }
-  async getDepthBufferPixels(x, y, z) {
+  async getBufferPixels(x, y, z) {
     x = Math.floor(x/voxelWidth);
     y = Math.floor(y/voxelWidth);
     z = Math.floor(z/voxelWidth);
@@ -724,7 +724,7 @@ class Mesher {
           localQuaternion.set(0, 0, 0, 1);
         }
         xrRaycaster.updateView(x, y, z, localQuaternion);
-        xrRaycaster.updateTexture();
+        xrRaycaster.updateDepthTexture();
         // await XRRaycaster.nextFrame();
         xrRaycaster.updateDepthBuffer();
         xrRaycaster.updateDepthBufferPixels();
@@ -771,7 +771,8 @@ class Mesher {
       this.arrayBuffer = null;
       const res = await this.worker.request({
         method: 'pushChunkTexture',
-        textures: depthTextures,
+        // colorTextures,
+        depthTextures,
         x, y, z, voxelWidth, voxelSize, voxelResolution,
         arrayBuffer,
       }, [arrayBuffer]);
@@ -799,7 +800,7 @@ class Mesher {
           const ax = (x+ix) * voxelWidth;
           const ay = (y+iy) * voxelWidth;
           const az = (z+iz) * voxelWidth;
-          await this.getDepthBufferPixels(ax, ay, az);
+          await this.getBufferPixels(ax, ay, az);
         }
       }
     }
@@ -1377,15 +1378,16 @@ class MesherServer {
       case 'pushChunkTexture': {
         const allocator = new Allocator();
 
-        const {textures: texturesData, x, y, z, voxelWidth, voxelSize, voxelResolution, arrayBuffer} = data;
-        const textures = allocator.alloc(Float32Array, texturesData.length);
-        textures.set(texturesData);
+        const {colorTextures: colorTexturesData, depthTextures: depthTexturesData, x, y, z, voxelWidth, voxelSize, voxelResolution, arrayBuffer} = data;
+        const depthTextures = allocator.alloc(Float32Array, depthTexturesData.length);
+        depthTextures.set(depthTexturesData);
 
         self.Module._doPushChunkTexture(
           x,
           y,
           z,
-          textures.offset,
+          // colorTextures.offset,
+          depthTextures.offset,
           voxelWidth,
           voxelSize,
           voxelResolution,
