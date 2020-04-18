@@ -28,7 +28,7 @@ export class XRRaycaster {
     this.renderer = renderer;
 
     const depthBufferPixels = new Float32Array(width * pixelRatio * height * pixelRatio * 4);
-    this.depthBufferPixels = depthBufferPixels;
+    // this.depthBufferPixels = depthBufferPixels;
 
     let camera = new THREE.OrthographicCamera(
       voxelSize / -2, voxelSize / 2,
@@ -37,14 +37,21 @@ export class XRRaycaster {
     );
     // this.camera = camera;
 
-    const depthTarget = new THREE.WebGLRenderTarget(width * pixelRatio, height * pixelRatio, {
-      minFilter: THREE.LinearFilter,
-      magFilter: THREE.NearestFilter,
-      format: THREE.RGBAFormat,
-      type: THREE.FloatType,
-      depthBuffer: true,
-      stencilBuffer: false,
-    });
+    const depthTarget = {};
+    const depthTargets = (() => {
+      const result = Array(6);
+      for (let i = 0; i < 6; i++) {
+        result[i] = new THREE.WebGLRenderTarget(width * pixelRatio, height * pixelRatio, {
+          minFilter: THREE.LinearFilter,
+          magFilter: THREE.NearestFilter,
+          format: THREE.RGBAFormat,
+          type: THREE.FloatType,
+          depthBuffer: true,
+          stencilBuffer: false,
+        });
+      }
+      return result;
+    })();
     // colorTarget.fresh = false;
     // colorTarget.freshDepthBuf = false;
     // colorTarget.freshCoordBuf = false;
@@ -72,29 +79,20 @@ export class XRRaycaster {
         // colorTarget.fresh = false;
       }
     };
-    depthTarget.updateDepthTexture = () => {
-      // if (!colorTarget.fresh) {
-        onDepthRender({
-          target: depthTarget,
-          near: 0.001,
-          far: voxelSize,
-          width,
-          height,
-          pixelRatio,
-          matrixWorld: camera.matrixWorld.toArray(),
-          projectionMatrix: camera.projectionMatrix.toArray(),
-        });
-        // colorTarget.fresh = true;
-        // colorTarget.freshDepthBuf = false;
-      // }
+    depthTarget.renderDepthTexture = i => {
+      onDepthRender({
+        target: depthTargets[i],
+        near: 0.001,
+        far: voxelSize,
+        width,
+        height,
+        pixelRatio,
+        matrixWorld: camera.matrixWorld.toArray(),
+        projectionMatrix: camera.projectionMatrix.toArray(),
+      });
     };
-    depthTarget.updateDepthBufferPixels = () => {
-      // if (!colorTarget.freshDepthBuf) {
-        renderer.readRenderTargetPixels(depthTarget, 0, 0, width * pixelRatio, height * pixelRatio, depthBufferPixels, 0);
-        // console.log('got raw depth buf', colorTargetDepthBuf);
-        // colorTarget.freshDepthBuf = true;
-        // colorTarget.freshCoordBuf = false;
-      // }
+    depthTarget.getDepthBufferPixels = (i, depthTextures, offset) => {
+      renderer.readRenderTargetPixels(depthTargets[i], 0, 0, width * pixelRatio, height * pixelRatio, new Float32Array(depthTextures.buffer, depthTextures.byteOffset + offset * Float32Array.BYTES_PER_ELEMENT, width * pixelRatio * height * pixelRatio * 4), 0);
     };
     /* const cameraOrigins = (() => {
       const origins = new Float32Array(width*height*3);
@@ -133,7 +131,6 @@ export class XRRaycaster {
         // colorTarget.freshCoordBuf = true;
       }; */
     // };
-    depthTarget.getDepthBufferPixels = () => depthBufferPixels;
     this.depthTarget = depthTarget;
   }
   getDepthTexture() {
@@ -170,17 +167,14 @@ export class XRRaycaster {
   updateView(x, y, z, q) {
     this.depthTarget.updateView(x, y, z, q);
   }
-  updateDepthTexture() {
-    this.depthTarget.updateDepthTexture();
+  renderDepthTexture(i) {
+    this.depthTarget.renderDepthTexture(i);
   }
   /* updateDepthBuffer() {
     this.depthTarget.updateDepthBuffer();
   } */
-  updateDepthBufferPixels() {
-    this.depthTarget.updateDepthBufferPixels();
-  }
-  getDepthBufferPixels() {
-    return this.depthTarget.getDepthBufferPixels();
+  getDepthBufferPixels(i, depthTextures, offset) {
+    return this.depthTarget.getDepthBufferPixels(i, depthTextures, offset);
   }
   /* render() {
     this.depthTarget.fresh = false;

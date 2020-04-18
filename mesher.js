@@ -781,12 +781,11 @@ class Mesher {
         }
         xrRaycaster.updateView(x, y, z, localQuaternion);
 
-        xrRaycaster.updateDepthTexture();
-        // xrRaycaster.updateDepthBuffer();
-        xrRaycaster.updateDepthBufferPixels();
-        const depthTexture = xrRaycaster.getDepthBufferPixels();
-        depthTextures.set(depthTexture, lodVoxelWidth * pixelRatio * lodVoxelWidth * pixelRatio * 4 * i);
+        xrRaycaster.renderDepthTexture(i);
       });
+      for (let i = 0; i < 6; i++) {
+        xrRaycaster.getDepthBufferPixels(i, depthTextures, lodVoxelWidth * pixelRatio * lodVoxelWidth * pixelRatio * 4 * i);
+      }
 
       this.reset();
 
