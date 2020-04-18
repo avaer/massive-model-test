@@ -469,8 +469,8 @@ let meshes = [];
     return result;
   })(); */
 
-  const voxelWidth = 10;
-  const voxelSize = 1;
+  const voxelWidth = 30;
+  const voxelSize = 3;
   const pixelRatio = 3;
   mesher.initVoxelize(voxelWidth, voxelSize, pixelRatio);
 
@@ -505,7 +505,7 @@ let meshes = [];
     const lodVoxelSize = voxelSize * (3**lod);
     const lodBaseChunk = new THREE.Vector3(Math.floor(currentPos.x/lodVoxelSize), Math.floor(currentPos.y/lodVoxelSize), Math.floor(currentPos.z/lodVoxelSize));
     for (let x = -2; x <= 4; x++) {
-      for (let z = -3; z <= 3; z++) {
+      for (let z = -1; z <= 4; z++) {
         for (let y = -3; y <= 3; y++) {
           if (lod === 0 || x !== 0 || y !== 0 || z !== 0) {
             lods.push({

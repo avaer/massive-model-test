@@ -758,11 +758,11 @@ class Mesher {
       const ay = y * lodVoxelSize + lodVoxelSize/2 + offsety;
       const az = z * lodVoxelSize + lodVoxelSize/2 + offsetz;
 
-      const o = Math.floor(pixelRatio/2);
+      // const o = Math.floor(pixelRatio/2);
 
       xrRaycaster.updateLod(voxelSize, lod);
 
-      const depthTextures = new Float32Array(lodVoxelWidth * lodVoxelWidth * 6);
+      const depthTextures = new Float32Array(lodVoxelWidth * pixelRatio * lodVoxelWidth * pixelRatio * 6);
       depthTextures.fill(Infinity);
       [
         [ax, ay, az + lodVoxelSize/2, 0, 0],
@@ -784,27 +784,9 @@ class Mesher {
         xrRaycaster.updateDepthTexture();
         xrRaycaster.updateDepthBuffer();
         xrRaycaster.updateDepthBufferPixels();
-        const depthTexture = xrRaycaster.getDepthBufferPixels();
+        let depthTexture = xrRaycaster.getDepthBufferPixels();
 
-        const startIndex = i * lodVoxelWidth * lodVoxelWidth;
-        for (let x = 0; x < lodVoxelWidth; x++) {
-          for (let y = 0; y < lodVoxelWidth; y++) {
-            let acc = Infinity;
-            for (let dx = -o; dx <= o; dx++) {
-              for (let dy = -o; dy <= o; dy++) {
-                const ax = o + x*pixelRatio + dx;
-                const ay = o + y*pixelRatio + dy;
-                const index = ax + ay*lodVoxelWidth*pixelRatio;
-                const v = depthTexture[index];
-                acc = Math.min(acc, v);
-              }
-            }
-            if (acc < Infinity) {
-              const index = startIndex + x + y*lodVoxelWidth;
-              depthTextures[index] = acc;
-            }
-          }
-        }
+        depthTextures.set(depthTexture, lodVoxelWidth * pixelRatio * lodVoxelWidth * pixelRatio * i);
       });
 
       this.reset();
@@ -816,7 +798,7 @@ class Mesher {
       const res = await this.worker.request({
         method: 'pushChunkTexture',
         depthTextures,
-        x, y, z, lod, voxelWidth: lodVoxelWidth, voxelSize: lodVoxelSize, voxelResolution: lodVoxelResolution,
+        x, y, z, lod, voxelWidth: lodVoxelWidth, voxelSize: lodVoxelSize, voxelResolution: lodVoxelResolution, pixelRatio,
         arrayBuffer,
       }, [arrayBuffer]);
       // console.log('got res', res);
@@ -858,7 +840,7 @@ class Mesher {
 
       this.reset();
 
-      // console.log('march potentials 1', x, y, z, lod);
+      console.log('march potentials 1', x, y, z, lod);
 
       const {arrayBuffer} = this;
       this.arrayBuffer = null;
@@ -1433,7 +1415,7 @@ class MesherServer {
       case 'pushChunkTexture': {
         const allocator = new Allocator();
 
-        const {x, y, z, lod, depthTextures: depthTexturesData, voxelWidth, voxelSize, voxelResolution, arrayBuffer} = data;
+        const {x, y, z, lod, depthTextures: depthTexturesData, voxelWidth, voxelSize, voxelResolution, pixelRatio, arrayBuffer} = data;
 
         const depthTextures = allocator.alloc(Float32Array, depthTexturesData.length);
         depthTextures.set(depthTexturesData);
@@ -1447,6 +1429,7 @@ class MesherServer {
           voxelWidth,
           voxelSize,
           voxelResolution,
+          pixelRatio,
           1,
           -1
         );

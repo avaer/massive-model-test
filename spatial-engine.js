@@ -27,7 +27,7 @@ export class XRRaycaster {
     // this.height = height;
     this.renderer = renderer;
 
-    const depthBufferPixels = new Float32Array(width*pixelRatio*height*pixelRatio);
+    const depthBufferPixels = new Float32Array(width * pixelRatio * height * pixelRatio);
     this.depthBufferPixels = depthBufferPixels;
 
     let camera = new THREE.OrthographicCamera(
