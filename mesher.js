@@ -92,7 +92,7 @@ const depthMaterial = (() => {
   });
 })();
 const raycasterCamera = new THREE.PerspectiveCamera();
-const _onDepthRender = ({target, near, far, width, height, pixelRatio, matrixWorld, projectionMatrix}) => {
+const onDepthRender = ({target, near, far, width, height, pixelRatio, matrixWorld, projectionMatrix}) => {
   raycasterCamera.near = near;
   raycasterCamera.far = far;
   raycasterCamera.matrixWorld.fromArray(matrixWorld).decompose(raycasterCamera.position, raycasterCamera.quaternion, raycasterCamera.scale);
@@ -739,7 +739,7 @@ class Mesher {
       pixelRatio,
       voxelSize,
       renderer,
-      onDepthRender: _onDepthRender,
+      onDepthRender,
     });
   }
   async getBufferPixels(x, y, z, offsetx, offsety, offsetz, lod) {
