@@ -762,7 +762,7 @@ class Mesher {
 
       xrRaycaster.updateLod(voxelSize, lod);
 
-      const depthTextures = new Float32Array(lodVoxelWidth * pixelRatio * lodVoxelWidth * pixelRatio * 6);
+      const depthTextures = new Float32Array(lodVoxelWidth * pixelRatio * lodVoxelWidth * pixelRatio * 4 * 6);
       depthTextures.fill(Infinity);
       [
         [ax, ay, az + lodVoxelSize/2, 0, 0],
@@ -782,11 +782,10 @@ class Mesher {
         xrRaycaster.updateView(x, y, z, localQuaternion);
 
         xrRaycaster.updateDepthTexture();
-        xrRaycaster.updateDepthBuffer();
+        // xrRaycaster.updateDepthBuffer();
         xrRaycaster.updateDepthBufferPixels();
-        let depthTexture = xrRaycaster.getDepthBufferPixels();
-
-        depthTextures.set(depthTexture, lodVoxelWidth * pixelRatio * lodVoxelWidth * pixelRatio * i);
+        const depthTexture = xrRaycaster.getDepthBufferPixels();
+        depthTextures.set(depthTexture, lodVoxelWidth * pixelRatio * lodVoxelWidth * pixelRatio * 4 * i);
       });
 
       this.reset();
@@ -840,7 +839,7 @@ class Mesher {
 
       this.reset();
 
-      console.log('march potentials 1', x, y, z, lod);
+      // console.log('march potentials 1', x, y, z, lod);
 
       const {arrayBuffer} = this;
       this.arrayBuffer = null;
