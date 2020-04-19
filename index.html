@@ -34,6 +34,7 @@ import {GLTFLoader} from './GLTFLoader.js';
 import {LegacyGLTFLoader} from './LegacyGLTFLoader.js';
 import {OBJLoader2} from './OBJLoader2.js';
 import {MTLLoader} from './MTLLoader.js';
+import {BufferGeometryUtils} from './BufferGeometryUtils.js';
 import {Mesher, makeGlobalMaterial, makeTexture, CHUNK_SIZE} from './mesher.js';
 import modelFiles from './model-files.js';
 
@@ -275,6 +276,116 @@ const _makeFloorMesh = (x, z) => {
 const floorMesh = _makeFloorMesh();
 container.add(floorMesh);
 
+const wallGeometry = (() => {
+  const panelGeometries = [];
+  for (let x = 0; x <= 1; x++) {
+    panelGeometries.push(
+      new THREE.BoxBufferGeometry(0.01, 2, 0.01)
+        .applyMatrix4(new THREE.Matrix4().makeTranslation(x, 1, 0))
+    );
+  }
+  for (let h = 0; h <= 2; h++) {
+    panelGeometries.push(
+      new THREE.BoxBufferGeometry(1, 0.01, 0.01)
+        .applyMatrix4(new THREE.Matrix4().makeTranslation(0.5, h, 0))
+    );
+  }
+  return BufferGeometryUtils.mergeBufferGeometries(panelGeometries);
+})();
+const topWallGeometry = wallGeometry.clone()
+  // .applyMatrix4(new THREE.Matrix4().makeTranslation(-0.5, 0, -0.5));
+const leftWallGeometry = wallGeometry.clone()
+  .applyMatrix4(new THREE.Matrix4().makeRotationAxis(new THREE.Vector3(0, 1, 0), Math.PI/2))
+  // .applyMatrix4(new THREE.Matrix4().makeTranslation(-0.5, 0, -0.5));
+const rightWallGeometry = wallGeometry.clone()
+  .applyMatrix4(new THREE.Matrix4().makeRotationAxis(new THREE.Vector3(0, 1, 0), -Math.PI/2))
+  // .applyMatrix4(new THREE.Matrix4().makeTranslation(-0.5, 0, -0.5));
+const bottomWallGeometry = wallGeometry.clone()
+  .applyMatrix4(new THREE.Matrix4().makeRotationAxis(new THREE.Vector3(0, 1, 0), Math.PI))
+  // .applyMatrix4(new THREE.Matrix4().makeTranslation(-0.5, 0, -0.5));
+const _makeParcelMesh = (extents, color) => {
+  const geometry = (() => {
+    const geometries = [];
+    const [[ax1, ay1, ax2, ay2]] = extents;
+    const w = ax2 - ax1;
+    const h = ay2 - ay1;
+    geometries.push(
+      new THREE.PlaneBufferGeometry(1, 1)
+        .applyMatrix4(new THREE.Matrix4().makeScale(w, h, 0))
+        .applyMatrix4(new THREE.Matrix4().makeTranslation(w/2, -h/2, 0.01))
+        .applyMatrix4(new THREE.Matrix4().makeRotationAxis(new THREE.Vector3(1, 0, 0), -Math.PI/2))
+    );
+    for (let x = ax1; x < ax2; x++) {
+      geometries.push(
+        topWallGeometry.clone()
+          .applyMatrix4(new THREE.Matrix4().makeTranslation(x, 0, ay1))
+      );
+      geometries.push(
+        bottomWallGeometry.clone()
+          .applyMatrix4(new THREE.Matrix4().makeTranslation(x+1, 0, ay2))
+      );
+    }
+    for (let y = ay1; y < ay2; y++) {
+      geometries.push(
+        leftWallGeometry.clone()
+          .applyMatrix4(new THREE.Matrix4().makeTranslation(ax1, 0, y+1))
+      );
+      geometries.push(
+        rightWallGeometry.clone()
+          .applyMatrix4(new THREE.Matrix4().makeTranslation(ax2, 0, y))
+      );
+    }
+    return BufferGeometryUtils.mergeBufferGeometries(geometries);
+  })();
+  const gridVsh = `
+    // varying vec3 vWorldPos;
+    // varying vec2 vUv;
+    varying float vDepth;
+    void main() {
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.);
+      // vUv = uv;
+      // vWorldPos = abs(position);
+      vDepth = gl_Position.z / ${distanceFactor.toFixed(8)};
+    }
+  `;
+  const gridFsh = `
+    // uniform sampler2D uTex;
+    uniform vec3 uColor;
+    uniform float uFlash;
+    // varying vec3 vWorldPos;
+    varying float vDepth;
+    void main() {
+      vec3 c = uColor + uFlash;
+      float a = (1.0-vDepth)*0.5;
+      gl_FragColor = vec4(c, a);
+    }
+  `;
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uColor: {
+        type: 'c',
+        value: new THREE.Color(color),
+      },
+      uFlash: {
+        type: 'f',
+        value: 0,
+      },
+    },
+    vertexShader: gridVsh,
+    fragmentShader: gridFsh,
+    transparent: true,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.frustumCulled = false;
+  mesh.setColor = c => {
+    mesh.material.uniforms.uColor.value.setHex(c);
+  };
+  return mesh;
+};
+
+const parcelMesh = _makeParcelMesh([[0, 0, 8, 8]], 0xffa726);
+container.add(parcelMesh);
+
 const mesher = new Mesher(renderer);
 // container.add(mesher.currentMesh);
 let meshes = [];
@@ -502,6 +613,8 @@ let meshes = [];
 
 function animate() {
   orbitControls.enabled && orbitControls.update();
+
+  parcelMesh.material.uniforms.uFlash.value = 1-(Date.now() % 1000)/1000;
 
   /* const f = (Math.sin((Date.now()%1000)/1000*Math.PI*2)+1)/2*0.3;
   for (let i = 0; i < meshes.length; i++) {
