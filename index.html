@@ -281,88 +281,6 @@ let meshes = [];
 (async () => {
   const manager = new THREE.LoadingManager();
 
-  /* {
-    const objs = modelFiles.filter(m => /\.obj/.test(m));
-    const rowSize = 10;
-    const numItems = 10;
-    for (let i = 0; i < numItems; i++) {
-      console.log(i);
-      const u = `models/${objs[i]}`;
-
-      const p = makePromise();
-      new MTLLoader(manager)
-        .load(u.replace('.obj', '.mtl'), materials => {
-          materials.preload();
-          p.accept(materials);
-        });
-      let materials = await p;
-      materials = Object.keys(materials.materials).map(k => materials.materials[k]);
-      
-      const p2 = makePromise();
-      const loader = new OBJLoader2(manager);
-      loader.parser.setMaterials( materials );
-      loader.load(u, p2.accept, function onProgress() {}, p2.reject);
-
-      const x = i%rowSize;
-      const z = -Math.floor(i/rowSize);
-
-      const o = await p2;
-      o.traverse(o => {
-        if (o.isMesh) {
-          o.geometry
-            .applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI)))
-            .applyMatrix4(new THREE.Matrix4().makeTranslation(-rowSize/2 + x, 0, z));
-          o.material = materials;
-          mesher.addMesh(o);
-        }
-      });
-      // container.add(o);
-    }
-  } */
-
-  {
-    const p = makePromise();
-    new GLTFLoader(manager).load('models/mountain.glb', p.accept, function onProgress() {}, p.reject);
-    const o = await p;
-    mesher.addMesh(o.scene);
-  }
-
-  {
-    const p = makePromise();
-    new GLTFLoader(manager).load('models/building.glb', p.accept, function onProgress() {}, p.reject);
-    const o = await p;
-    mesher.addMesh(o.scene);
-  }
-
-  {
-    const p = makePromise();
-    new GLTFLoader(manager).load('models/model.vrm', p.accept, function onProgress() {}, p.reject);
-    const o = await p;
-    mesher.addMesh(o.scene);
-  }
-
-  /* {
-    const p = makePromise();
-    new LegacyGLTFLoader(manager).load('models/dino/sketch.gltf', p.accept, function onProgress() {}, p.reject);
-    const o = await p;
-    mesher.addMesh(o.scene);
-  } */
-
-  /* {
-    const p = makePromise();
-    new GLTFLoader(manager).load('models/scene.glb', p.accept, function onProgress() {}, p.reject);
-    const o = await p;
-
-    // window.o = o;
-    // o.scene.children.splice(40, Infinity);
-    // const chair = o.scene.children.slice(29, 30);
-    // o.scene.children.length = 0;
-    // o.scene.children.push.apply(o.scene.children, chair);
-    _mergeScene(o.scene);
-
-    // container.add(o.scene);
-  } */
-
   const _getMeshUrl = (x, z) => `/d/chunk:${x}:${z}.bin`;
   const _serializeMesh = async mesh => {
     const positions = mesh.geometry.attributes.position.array;
@@ -469,76 +387,101 @@ let meshes = [];
     return result;
   })(); */
 
-  const voxelWidth = 30;
-  const voxelSize = 3;
+  const voxelWidth = 15;
+  const voxelSize = 1;
   const pixelRatio = 3;
   mesher.initVoxelize(voxelWidth, voxelSize, pixelRatio);
 
-  // const lodBaseChunk = new THREE.Vector3(Math.floor(currentPos.x/voxelSize), Math.floor(currentPos.y/voxelSize), Math.floor(currentPos.z/voxelSize));
-  /* const lods = [
-    {
-      x: lodBaseChunk.x,
-      z: lodBaseChunk.z,
-      lod: 0,
-    },
-    {
-      x: lodBaseChunk.x + voxelSize,
-      z: lodBaseChunk.z,
-      lod: 0,
-    },
-    {
-      x: lodBaseChunk.x,
-      z: lodBaseChunk.z + voxelSize,
-      lod: 0,
-    },
-    {
-      x: lodBaseChunk.x + voxelSize,
-      z: lodBaseChunk.z + voxelSize,
-      lod: 0,
-    },
-  ]; */
-  const currentPos = new THREE.Vector3(0, 0, 0);
-  const lods = [];
-  let offset = 0;
-  // for (let lod = 0; lod < 2; lod++) {
-    let lod = 0;
-    const lodVoxelSize = voxelSize * (3**lod);
-    const lodBaseChunk = new THREE.Vector3(Math.floor(currentPos.x/lodVoxelSize), Math.floor(currentPos.y/lodVoxelSize), Math.floor(currentPos.z/lodVoxelSize));
-    for (let x = -2; x <= 4; x++) {
-      for (let z = -1; z <= 4; z++) {
-        for (let y = -3; y <= 3; y++) {
-          if (lod === 0 || x !== 0 || y !== 0 || z !== 0) {
-            lods.push({
-              x: lodBaseChunk.x + x,
-              y: lodBaseChunk.y + y,
-              z: lodBaseChunk.z + z,
-              offset,
-              lod,
-            });
-          }
+  /* {
+    const objs = modelFiles.filter(m => /\.obj/.test(m));
+    const rowSize = 10;
+    const numItems = 10;
+    for (let i = 0; i < numItems; i++) {
+      console.log(i);
+      const u = `models/${objs[i]}`;
+
+      const p = makePromise();
+      new MTLLoader(manager)
+        .load(u.replace('.obj', '.mtl'), materials => {
+          materials.preload();
+          p.accept(materials);
+        });
+      let materials = await p;
+      materials = Object.keys(materials.materials).map(k => materials.materials[k]);
+      
+      const p2 = makePromise();
+      const loader = new OBJLoader2(manager);
+      loader.parser.setMaterials( materials );
+      loader.load(u, p2.accept, function onProgress() {}, p2.reject);
+
+      const x = i%rowSize;
+      const z = -Math.floor(i/rowSize);
+
+      const o = await p2;
+      o.traverse(o => {
+        if (o.isMesh) {
+          o.geometry
+            .applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI)))
+            .applyMatrix4(new THREE.Matrix4().makeTranslation(-rowSize/2 + x, 0, z));
+          o.material = materials;
+          mesher.addMesh(o);
         }
-      }
+      });
+      // container.add(o);
     }
-    offset -= lodVoxelSize;
-  // }
-    
-    
-  for (let i = 0; i < lods.length; i++) {
-    const {x, y, z, offset, lod} = lods[i];
-    const mesh = await mesher.getChunk(x, y, z, offset, offset, offset, lod);
-    // console.log('got chunk', x, y, z, mesh.geometry.attributes.position.array.length);
-    container.add(mesh);
-    meshes.push(mesh);
   }
-  // }
-  /* const _testMesh = async m => {
-    const ab = await _serializeMesh(m);
-    const m2 = await _deserializeMesh(ab);
-    m2.x = m.x;
-    m2.z = m.z;
-    return m2;
-  };
-  meshes = await Promise.all(meshes.map(m => _testMesh(m))); */
+
+  {
+    const p = makePromise();
+    new GLTFLoader(manager).load('models/mountain.glb', p.accept, function onProgress() {}, p.reject);
+    const o = await p;
+    mesher.addMesh(o.scene);
+  }
+
+  {
+    const p = makePromise();
+    new GLTFLoader(manager).load('models/building.glb', p.accept, function onProgress() {}, p.reject);
+    const o = await p;
+    mesher.addMesh(o.scene);
+  } */
+
+  {
+    const p = makePromise();
+    new GLTFLoader(manager).load('models/model.vrm', p.accept, function onProgress() {}, p.reject);
+    const o = await p;
+    const mesh = await mesher.voxelize(o.scene);
+    container.add(mesh);
+    // mesher.addMesh(o.scene);
+  }
+  {
+    const p = makePromise();
+    new GLTFLoader(manager).load('models/model.vrm', p.accept, function onProgress() {}, p.reject);
+    const o = await p;
+    scene.add(o.scene);
+  }
+
+  /* {
+    const p = makePromise();
+    new LegacyGLTFLoader(manager).load('models/dino/sketch.gltf', p.accept, function onProgress() {}, p.reject);
+    const o = await p;
+    mesher.addMesh(o.scene);
+  } */
+
+  /* {
+    const p = makePromise();
+    new GLTFLoader(manager).load('models/scene.glb', p.accept, function onProgress() {}, p.reject);
+    const o = await p;
+
+    // window.o = o;
+    // o.scene.children.splice(40, Infinity);
+    // const chair = o.scene.children.slice(29, 30);
+    // o.scene.children.length = 0;
+    // o.scene.children.push.apply(o.scene.children, chair);
+    _mergeScene(o.scene);
+
+    // container.add(o.scene);
+  } */
+
   return;
 
   {

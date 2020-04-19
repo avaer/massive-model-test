@@ -59,15 +59,26 @@ export class XRRaycaster {
     // this.colorTargetDepthBuf = colorTargetDepthBuf;
     /* const colorTargetCoordBuf = new Float32Array(width*pixelRatio*height*pixelRatio*3); // decoded xyz points
     this.colorTargetCoordBuf = colorTargetCoordBuf; */
-    depthTarget.updateLod = (voxelSize, lod) => {
+    /* depthTarget.updateLod = (voxelSize, lod) => {
       const lodVoxelSize = voxelSize * (3**lod);
       camera = new THREE.OrthographicCamera(
         lodVoxelSize / -2, lodVoxelSize / 2,
         lodVoxelSize / 2, lodVoxelSize / -2,
         0.001, lodVoxelSize
       );
+    }; */
+    depthTarget.updateSize = (uSize, vSize, dSize) => {
+      // console.log('update size', uSize, vSize, dSize);
+      camera.left = uSize / -2;
+      camera.right = uSize / 2;
+      camera.top = vSize / 2;
+      camera.bottom = vSize / -2;
+      camera.near = 0.001;
+      camera.far = dSize;
+      camera.updateProjectionMatrix();
     };
     depthTarget.updateView = (x, y, z, q) => {
+      // console.log('update view', x, y, z);
       // const position = localVector.fromArray(p);
       // const quaternion = localQuaternion.fromArray(q);
 
@@ -161,11 +172,14 @@ export class XRRaycaster {
       return null;
     }
   } */
-  updateLod(voxelSize, lod) {
+  /* updateLod(voxelSize, lod) {
     this.depthTarget.updateLod(voxelSize, lod);
-  }
+  } */
   updateView(x, y, z, q) {
     this.depthTarget.updateView(x, y, z, q);
+  }
+  updateSize(x, y, z) {
+    this.depthTarget.updateSize(x, y, z);
   }
   renderDepthTexture(i) {
     this.depthTarget.renderDepthTexture(i);
