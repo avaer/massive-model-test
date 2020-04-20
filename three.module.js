@@ -23894,6 +23894,7 @@ function WebGLRenderer( parameters ) {
 
 	this.shadowMap = shadowMap;
 
+	this.textures = textures;
 	this.attributes = attributes;
 
 	// API
@@ -24662,6 +24663,10 @@ function WebGLRenderer( parameters ) {
 		} );
 
 	};
+	this.setCurrentRenderState = function(scene, camera) {
+		currentRenderState = renderStates.get( scene, _currentArrayCamera || camera );
+	};
+	this.setProgram = setProgram;
 
 	// Animation Loop
 
