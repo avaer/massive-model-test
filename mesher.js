@@ -305,7 +305,6 @@ class Mesher {
     this.worker = _makeWasmWorker();
 
     this.globalMaterial = null
-    this.currentMesh = null;
     this.meshes = [];
     this.aabb = new THREE.Box3();
     this.arrayBuffer = null;
@@ -336,9 +335,9 @@ class Mesher {
       this.globalMaterial = makeGlobalMaterial();
     }
 
-    const mesh = new THREE.Mesh(geometry, this.globalMaterial);
+    /* const mesh = new THREE.Mesh(geometry, this.globalMaterial);
     mesh.frustumCulled = false;
-    this.currentMesh = mesh;
+    this.currentMesh = mesh; */
   }
   addMesh(o) {
     o.aabb = new THREE.Box3().setFromObject(o);
@@ -436,31 +435,6 @@ class Mesher {
     const mesh = new THREE.Mesh(new THREE.BufferGeometry(), this.globalMaterial);
     mesh.geometry.setAttribute('position', new THREE.BufferAttribute(res.positions, 3));
     mesh.geometry.setAttribute('barycentric', new THREE.BufferAttribute(res.barycentrics, 3));
-    /* const c = new THREE.Color(Math.random(), Math.random(), Math.random());
-    const cs = new Float32Array(res.positions.length);
-    for (let i = 0; i < res.positions.length; i += 3) {
-      cs[i] = c.r;
-      cs[i+1] = c.g;
-      cs[i+2] = c.b;
-    }
-    currentMesh.geometry.setAttribute('color', new THREE.BufferAttribute(cs, 3)); */
-    // mesh.geometry.deleteAttribute('uv', undefined);
-    // mesh.geometry.deleteAttribute('id', undefined);
-    /* currentMesh.geometry.setIndex(new THREE.BufferAttribute(res.indices, 1));
-    currentMesh.geometry = currentMesh.geometry.toNonIndexed();
-    currentMesh.geometry.computeVertexNormals(); */
-    // mesh.geometry.setDrawRange(0, Infinity);
-
-    /* const {arrayBuffer} = this;
-    this.arrayBuffer = null;
-    const res = await this.worker.request({
-      method: 'pushChunkTexture',
-      depthTextures,
-      x, y, z, lod, voxelWidth: lodVoxelWidth, voxelSize: lodVoxelSize, voxelResolution: lodVoxelResolution, pixelRatio,
-      arrayBuffer,
-    }, [arrayBuffer]);
-    // console.log('got res', res);
-    this.arrayBuffers.push(res.arrayBuffer); */
 
     scene.remove(m);
 
