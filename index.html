@@ -54,9 +54,12 @@ const easing = BezierEasing(0, 1, 0, 1);
 const canvas = document.getElementById('canvas');
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
+const context = canvas.getContext('webgl2', {
+  antialias: true,
+});
 const renderer = new THREE.WebGLRenderer({
   canvas,
-  antialias: true,
+  context,
 });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.sortObjects = false;
