@@ -309,6 +309,34 @@ const floorGeometry = new THREE.PlaneBufferGeometry(1, 1)
   .applyMatrix4(new THREE.Matrix4().makeScale(0.99, 0.99, 1))
   .applyMatrix4(new THREE.Matrix4().makeTranslation(0.5, -0.5, 0.01))
   .applyMatrix4(new THREE.Matrix4().makeRotationAxis(new THREE.Vector3(1, 0, 0), -Math.PI/2));
+const gridVsh = `
+  // varying vec3 vWorldPos;
+  // varying vec2 vUv;
+  uniform float uStart;
+  varying float vDepth;
+  void main() {
+    vec3 p = position;
+    p.y *= uStart;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.);
+    // vUv = uv;
+    // vWorldPos = abs(position);
+    vDepth = gl_Position.z / ${distanceFactor.toFixed(8)};
+  }
+`;
+const gridFsh = `
+  // uniform sampler2D uTex;
+  uniform vec3 uColor;
+  uniform float uFlash;
+  uniform float uStart;
+  // varying vec3 vWorldPos;
+  varying float vDepth;
+  void main() {
+    float f = uFlash*0.5;
+    vec3 c = uColor*(1.0-f) + f;
+    float a = (1.0-vDepth)*uStart*0.3;
+    gl_FragColor = vec4(c, a);
+  }
+`;
 const _makeParcelMesh = (extents, color, key) => {
   const [[ax1, ay1, ax2, ay2]] = extents;
   const w = ax2 - ax1;
@@ -343,34 +371,6 @@ const _makeParcelMesh = (extents, color, key) => {
     }
     return BufferGeometryUtils.mergeBufferGeometries(geometries);
   })();
-  const gridVsh = `
-    // varying vec3 vWorldPos;
-    // varying vec2 vUv;
-    uniform float uStart;
-    varying float vDepth;
-    void main() {
-      vec3 p = position;
-      p.y *= uStart;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.);
-      // vUv = uv;
-      // vWorldPos = abs(position);
-      vDepth = gl_Position.z / ${distanceFactor.toFixed(8)};
-    }
-  `;
-  const gridFsh = `
-    // uniform sampler2D uTex;
-    uniform vec3 uColor;
-    uniform float uFlash;
-    uniform float uStart;
-    // varying vec3 vWorldPos;
-    varying float vDepth;
-    void main() {
-      float f = uFlash*0.5;
-      vec3 c = uColor*(1.0-f) + f;
-      float a = (1.0-vDepth)*uStart*0.3;
-      gl_FragColor = vec4(c, a);
-    }
-  `;
   const material = new THREE.ShaderMaterial({
     uniforms: {
       uColor: {
@@ -397,10 +397,24 @@ const _makeParcelMesh = (extents, color, key) => {
   );
   mesh.key = key;
   mesh.startTime = Date.now();
-  mesh.frustumCulled = false;
-  mesh.setColor = c => {
+  /* mesh.setColor = c => {
     mesh.material.uniforms.uColor.value.setHex(c);
+  }; */
+  mesh.frustumCulled = false;
+
+  const chunk = mesher.getChunk(mesh.aabb);
+  chunk.addEventListener('previewMesh', e => {
+    const m = e.data;
+    mesh.add(m);
+  });
+  chunk.addEventListener('mesh', e => {
+    const m = e.data;
+    mesh.add(m);
+  });
+  mesh.destroy = () => {
+    chunk.destroy();
   };
+
   return mesh;
 };
 const parcels = {};
@@ -428,6 +442,7 @@ const _loadParcelMeshes = p => {
     if (currentParcels[key]) {
       return true;
     } else {
+      parcelMesh.destroy();
       container.remove(parcelMesh);
       parcels[key] = false;
       return false;
@@ -587,9 +602,7 @@ let meshes = [];
           // mesher.addMesh(o);
         }
       });
-      const mesh = await mesher.voxelize(o);
-      // container.add(o);
-      container.add(mesh);
+      mesher.addMesh(o);
     }
   })();
 
@@ -598,8 +611,7 @@ let meshes = [];
     new GLTFLoader(manager).load('models/mountain.glb', p.accept, function onProgress() {}, p.reject);
     const o = await p;
     o.scene.position.z = -30;
-    const mesh = await mesher.voxelize(o.scene);
-    container.add(mesh);
+    mesher.addMesh(o.scene);
   }
 
   /* {
@@ -614,8 +626,7 @@ let meshes = [];
     const p = makePromise();
     new GLTFLoader(manager).load('models/model.vrm', p.accept, function onProgress() {}, p.reject);
     const o = await p;
-    const mesh = await mesher.voxelize(o.scene);
-    container.add(mesh);
+    mesher.addMesh(o.scene);
   }
 
   /* {
@@ -646,7 +657,6 @@ let meshes = [];
     for (let i = 0; i < meshes.length; i++) {
       const mesh = meshes[i];
       const body = await _serializeMesh(mesh);
-      console.log('set body', mesh.x, mesh.z, body);
       const res = await fetch(_getMeshUrl(x, z), {
         method: 'PUT',
         body,

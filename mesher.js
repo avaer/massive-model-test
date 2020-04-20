@@ -249,6 +249,7 @@ class Mesher {
     this.aabb = new THREE.Box3();
     this.arrayBuffer = null;
     this.arrayBuffers = [];
+    this.chunks = [];
 
     this.dbpCache = {};
 
@@ -353,13 +354,17 @@ class Mesher {
     }
   }
   addMesh(o) {
-    this.meshes.push(o);
     o.aabb = new THREE.Box3().setFromObject(o);
+    this.meshes.push(o);
+    /* o.aabb = new THREE.Box3().setFromObject(o);
     o.aabb.min.x = Math.floor(o.aabb.min.x/CHUNK_SIZE)*CHUNK_SIZE;
     o.aabb.max.x = Math.ceil(o.aabb.max.x/CHUNK_SIZE)*CHUNK_SIZE;
     o.aabb.min.z = Math.floor(o.aabb.min.z/CHUNK_SIZE)*CHUNK_SIZE;
     o.aabb.max.z = Math.ceil(o.aabb.max.z/CHUNK_SIZE)*CHUNK_SIZE;
-    this.aabb.union(o.aabb);
+    this.aabb.union(o.aabb); */
+    for (let i = 0; i < this.chunks.length; i++) {
+      this.chunks[i].notifyMesh(o);
+    }
   }
   mergeMeshGeometry(o, mergeMaterial, forceUvs) {
     const {geometry, material} = this.currentMesh;
@@ -690,16 +695,7 @@ class Mesher {
 
     return mesh;
   }
-  getMeshesInChunk(x, y, z, offsetx, offsety, offsetz, lod) {
-    const lodVoxelSize = voxelSize * (3**lod);
-    const lodVoxelWidth = voxelWidth;
-    const lodVoxelResolution = voxelResolution * (3**lod);
-
-    const aabb = new THREE.Box3(
-      new THREE.Vector3(x*lodVoxelSize + offsetx, y*lodVoxelSize + offsety, z*lodVoxelSize + offsetz),
-      new THREE.Vector3((x+1)*lodVoxelSize + offsetx, (y+1)*lodVoxelSize + offsety, (z+1)*lodVoxelSize + offsetz)
-    );
-    // console.log('got aabbs', this.meshes.map(m => ([m.aabb.min.toArray(), m.aabb.max.toArray()])));
+  getMeshesInAabb(aabb) {
     return this.meshes.filter(m => m.aabb.intersectsBox(aabb));
   }
   /* getMeshBudgets(meshes) {
@@ -839,83 +835,32 @@ class Mesher {
 
     return mesh;
   }
-  async getChunk(x, y, z, offsetx, offsety, offsetz, lod) {
-    const {currentMesh, packer, globalMaterial} = this;
-
-    const meshes = this.getMeshesInChunk(x, y, z, offsetx, offsety, offsetz, lod);
-    return this.voxelize(x, y, z, offsetx, offsety, offsetz, lod, meshes);
-
-    const meshBudgets = this.getMeshBudgets(meshes);
-
-    this.reset();
-
-    const decimatedMeshes = [];
-    const decimatedMeshPackers = [];
-    for (let i = 0; i < meshes.length; i++) {
-      const mesh = meshes[i];
-      // const meshBudget = meshBudgets[i];
-
-      this.mergeMeshGeometryScene(mesh, true, false);
-      // decimatedMeshPackers.push(this.packer);
-
-      /* for (let i = 0; i < this.currentMesh.geometry.attributes.position.array.length; i++) {
-        this.currentMesh.geometry.attributes.position.array[i] = Math.floor(this.currentMesh.geometry.attributes.position.array[i]/0.05)*0.05;
+  getChunk(aabb) {
+    const chunk = new EventTarget();
+    (async () => {
+      const meshes = this.getMeshesInAabb(aabb);
+      // console.log('got meshes', meshes.length, aabb.min.toArray(), aabb.max.toArray());
+      for (let i = 0; i < meshes.length; i++) {
+        const mesh = meshes[i];
+        const previewMesh = await this.voxelize(mesh);
+        chunk.dispatchEvent(new MessageEvent('previewMesh', {
+          data: previewMesh,
+        }));
       }
-      const a = new THREE.Vector3();
-      const b = new THREE.Vector3();
-      const c = new THREE.Vector3();
-      const cb = new THREE.Vector3();
-      const ab = new THREE.Vector3();
-      const positions = this.currentMesh.geometry.attributes.position.array;
-      const normals = this.currentMesh.geometry.attributes.normal.array;
-      window.positions = positions;
-      window.normals = normals;
-      for (let i = 0; i < positions.length; i += 9) {
-        a.fromArray(positions, i);
-        b.fromArray(positions, i+3);
-        c.fromArray(positions, i+6);
-
-        cb.subVectors(c, b);
-        ab.subVectors(a, b);
-        cb.cross(ab);
-
-        normals[ i ] = cb.x;
-        normals[ i + 1 ] = cb.y;
-        normals[ i + 2 ] = cb.z;
-
-        normals[ i + 3 ] = cb.x;
-        normals[ i + 4 ] = cb.y;
-        normals[ i + 5 ] = cb.z;
-
-        normals[ i + 6 ] = cb.x;
-        normals[ i + 7 ] = cb.y;
-        normals[ i + 8 ] = cb.z;
+    })();
+    chunk.notifyMesh = async mesh => {
+      if (mesh.aabb.intersectsBox(aabb)) {
+        const previewMesh = await this.voxelize(mesh);
+        chunk.dispatchEvent(new MessageEvent('previewMesh', {
+          data: previewMesh,
+        }));
       }
-      for (let i = 0; i < positions.length; i += 3) {
-        const length = Math.sqrt(normals[i] * normals[i] + normals[i+1] * normals[i+1] + normals[i+2] * normals[i+2]);
-        normals[i] /= length;
-        normals[i+1] /= length;
-        normals[i+2] /= length;
-      } */
-      // debugger;
-      // this.currentMesh.geometry.computeVertexNormals();
-    }
-
-    const decimatedMesh = await this.decimateMesh(x, z, lod);
-    return decimatedMesh;
-
-    this.reset();
-    for (let i = 0; i < decimatedMeshes.length; i++) {
-      const decimatedMesh = decimatedMeshes[i];
-      this.mergeMeshGeometryScene(decimatedMesh, false, true);
-    }
-    for (let i = 0; i < decimatedMeshPackers.length; i++) {
-      this.mergePacker(decimatedMeshPackers[i]);
-    }
-    this.repackTexture();
-
-    const chunkMesh = await this.chunkMesh(x, z);
-    return chunkMesh;
+    };
+    chunk.destroy = () => {
+      this.chunks.splice(this.chunks.indexOf(chunk), 1);
+    };
+    this.chunks.push(chunk);
+    return chunk;
   }
 }
 
