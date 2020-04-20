@@ -361,12 +361,13 @@ const _makeParcelMesh = (extents, color) => {
     // uniform sampler2D uTex;
     uniform vec3 uColor;
     uniform float uFlash;
+    uniform float uStart;
     // varying vec3 vWorldPos;
     varying float vDepth;
     void main() {
       float f = uFlash*0.5;
       vec3 c = uColor*(1.0-f) + f;
-      float a = (1.0-vDepth)*0.3;
+      float a = (1.0-vDepth)*uStart*0.3;
       gl_FragColor = vec4(c, a);
     }
   `;
