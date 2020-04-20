@@ -34,6 +34,7 @@ import {GLTFLoader} from './GLTFLoader.js';
 import {LegacyGLTFLoader} from './LegacyGLTFLoader.js';
 import {OBJLoader2} from './OBJLoader2.js';
 import {MTLLoader} from './MTLLoader.js';
+import {GLTFExporter} from './GLTFExporter.js';
 import {BufferGeometryUtils} from './BufferGeometryUtils.js';
 import {Mesher, makeGlobalMaterial, makeTexture, CHUNK_SIZE} from './mesher.js';
 import modelFiles from './model-files.js';
@@ -461,7 +462,7 @@ let meshes = [];
   const manager = new THREE.LoadingManager();
 
   const _getMeshUrl = (x, z) => `/d/chunk:${x}:${z}.bin`;
-  const _serializeMesh = async mesh => {
+  /* const _serializeRawMesh = async mesh => {
     const positions = mesh.geometry.attributes.position.array;
     const normals = mesh.geometry.attributes.normal.array;
     const colors = mesh.geometry.attributes.color.array;
@@ -507,7 +508,7 @@ let meshes = [];
 
     return arrayBuffer;
   };
-  const _deserializeMesh = async arrayBuffer => {
+  const _deserializeRawMesh = async arrayBuffer => {
     let index = 0;
     const _get = c => {
       const count = new Uint32Array(arrayBuffer, index, 1)[0];
@@ -551,6 +552,97 @@ let meshes = [];
     const mesh = new THREE.Mesh(geometry, material);
     mesh.frustumCulled = false;
     return mesh;
+  }; */
+
+  const _serializeMesh = async o => {
+    const p = makePromise();
+    new GLTFExporter().parse(o, gltf => {
+      p.accept(gltf);
+    }, {
+      binary: true,
+      // includeCustomExtensions: true,
+    });
+    const b = await p;
+    return new Blob([b], {
+      type: 'application/octet-stream',
+    });
+  };
+  const _deserializeMesh = async (b, context) => {
+    const u = URL.createObjectURL(b);
+    const p = makePromise();
+    new GLTFLoader().load(u, p.accept, function onProgress() {}, p.reject);
+    try {
+      let o = await p;
+      o = o.scene;
+      o.traverse(o => {
+        if (o.isMesh) {
+          o.frustumCulled = false;
+        }
+      });
+
+      const {attributes, textures} = renderer;
+      const materialObjects = [];
+      o.traverse(o => {
+        if (o.isMesh) {
+          {
+            const {geometry} = o;
+
+            var index = geometry.index;
+            var geometryAttributes = geometry.attributes;
+
+            if ( index !== null ) {
+
+              attributes.update( index, 34963 );
+
+            }
+
+            for ( var name in geometryAttributes ) {
+
+              attributes.update( geometryAttributes[ name ], 34962 );
+
+            }
+
+            // morph targets
+
+            var morphAttributes = geometry.morphAttributes;
+
+            for ( var name in morphAttributes ) {
+
+              var array = morphAttributes[ name ];
+
+              for ( var i = 0, l = array.length; i < l; i ++ ) {
+
+                attributes.update( array[ i ], 34962 );
+
+              }
+
+            }
+          }
+          {
+            const {material} = o;
+
+            const ks = Object.getOwnPropertyNames(material);
+            ks.forEach(k => {
+              const v = material[k];
+              if (v && v.isTexture) {
+                textures.setTexture2D(v, 0);
+              }
+            });
+
+            materialObjects.push(o);
+          }
+        }
+      });
+      renderer.setCurrentRenderState(scene, camera);
+      for (let i = 0; i < materialObjects.length; i++) {
+        const o = materialObjects[i];
+        renderer.setProgram(camera, scene, o.material, o);
+      }
+
+      return o;
+    } finally {
+      URL.revokeObjectURL(u);
+    }
   };
 
   /* meshes = await (async () => {
@@ -630,7 +722,15 @@ let meshes = [];
     const p = makePromise();
     new GLTFLoader(manager).load('models/model.vrm', p.accept, function onProgress() {}, p.reject);
     const o = await p;
-    mesher.addMesh(o.scene);
+    const b = await _serializeMesh(o.scene);
+    // console.log('got serialized 1', b);
+    const o2 = await _deserializeMesh(b, renderer.getContext());
+    setTimeout(() => {
+      // console.log('add to scene 2');
+      container.add(o2);
+    }, 10 * 1000);
+    // debugger;
+    // mesher.addMesh(o.scene);
   }
 
   /* {
@@ -660,7 +760,7 @@ let meshes = [];
   {
     for (let i = 0; i < meshes.length; i++) {
       const mesh = meshes[i];
-      const body = await _serializeMesh(mesh);
+      const body = await _serializeRawMesh(mesh);
       const res = await fetch(_getMeshUrl(x, z), {
         method: 'PUT',
         body,
