@@ -1,9 +1,7 @@
 import THREE from './three.module.js';
-import maxrects from './maxrects-packer.min.js';
-import {XRRaycaster} from './spatial-engine.js';
+// import maxrects from './maxrects-packer.min.js';
 
 const NUM_POSITIONS = 8 * 1024 * 1024;
-const TEXTURE_SIZE = 4*1024;
 const CHUNK_SIZE = 16;
 
 const localVector = new THREE.Vector3();
@@ -211,6 +209,86 @@ const _makeWasmWorker = () => {
   return w;
 };
 
+export class XRRaycaster {
+  constructor({width = 512, height = 512, pixelRatio = 1, voxelSize, renderer = new THREE.WebGLRenderer(), onDepthRender = (target, camera) => {}} = {}) {
+    // this.width = width;
+    // this.height = height;
+    this.renderer = renderer;
+
+    const depthBufferPixels = new Float32Array(width * pixelRatio * height * pixelRatio * 4);
+    // this.depthBufferPixels = depthBufferPixels;
+
+    let camera = new THREE.OrthographicCamera(
+      voxelSize / -2, voxelSize / 2,
+      voxelSize / 2, voxelSize / -2,
+      0.001, voxelSize
+    );
+    // this.camera = camera;
+
+    let far = voxelSize;
+
+    const depthTarget = {};
+    const depthTargets = (() => {
+      const result = Array(6);
+      for (let i = 0; i < 6; i++) {
+        result[i] = new THREE.WebGLRenderTarget(width * pixelRatio, height * pixelRatio, {
+          minFilter: THREE.LinearFilter,
+          magFilter: THREE.NearestFilter,
+          format: THREE.RGBAFormat,
+          type: THREE.FloatType,
+          depthBuffer: true,
+          stencilBuffer: false,
+        });
+      }
+      return result;
+    })();
+    depthTarget.updateSize = (uSize, vSize, dSize) => {
+      camera.left = uSize / -2;
+      camera.right = uSize / 2;
+      camera.top = vSize / 2;
+      camera.bottom = vSize / -2;
+      camera.near = 0.001;
+      camera.far = dSize;
+      camera.updateProjectionMatrix();
+
+      far = dSize;
+    };
+    depthTarget.updateView = (x, y, z, q) => {
+      if (camera.position.x !== x || camera.position.y !== y || camera.position.z !== z || !camera.quaternion.equals(q)) {
+        camera.position.set(x, y, z);
+        camera.quaternion.copy(q);
+        camera.updateMatrixWorld();
+      }
+    };
+    depthTarget.renderDepthTexture = i => {
+      onDepthRender({
+        target: depthTargets[i],
+        near: 0.001,
+        far,
+        pixelRatio,
+        matrixWorld: camera.matrixWorld.toArray(),
+        projectionMatrix: camera.projectionMatrix.toArray(),
+      });
+    };
+    depthTarget.getDepthBufferPixels = (i, depthTextures, offset) => {
+      renderer.readRenderTargetPixels(depthTargets[i], 0, 0, width * pixelRatio, height * pixelRatio, new Float32Array(depthTextures.buffer, depthTextures.byteOffset + offset * Float32Array.BYTES_PER_ELEMENT, width * pixelRatio * height * pixelRatio * 4), 0);
+    };
+    this.depthTarget = depthTarget;
+  }
+  updateView(x, y, z, q) {
+    this.depthTarget.updateView(x, y, z, q);
+  }
+  updateSize(x, y, z) {
+    this.depthTarget.updateSize(x, y, z);
+  }
+  renderDepthTexture(i) {
+    this.depthTarget.renderDepthTexture(i);
+  }
+  getDepthBufferPixels(i, depthTextures, offset) {
+    return this.depthTarget.getDepthBufferPixels(i, depthTextures, offset);
+  }
+}
+
 class Allocator {
   constructor() {
     this.offsets = [];
@@ -236,33 +314,19 @@ class Mesher {
 
     this.worker = _makeWasmWorker();
 
-    this.positionsIndex = 0;
-    this.normalsIndex = 0;
-    this.colorsIndex = 0;
-    this.uvsIndex = 0;
-    this.idsIndex = 0;
-    this.currentId = 0;
     this.globalMaterial = null
     this.currentMesh = null;
-    this.packer = null;
     this.meshes = [];
     this.aabb = new THREE.Box3();
     this.arrayBuffer = null;
     this.arrayBuffers = [];
     this.chunks = [];
 
-    this.dbpCache = {};
+    // this.dbpCache = {};
 
-    this.reset();
+    // this.reset();
   }
   reset() {
-    /* this.positionsIndex = 0;
-    this.normalsIndex = 0;
-    this.colorsIndex = 0;
-    this.uvsIndex = 0;
-    this.idsIndex = 0;
-    this.currentId = 0; */
-
     if (!this.arrayBuffer) {
       this.arrayBuffer = this.arrayBuffers.pop();
     }
@@ -275,450 +339,27 @@ class Mesher {
         NUM_POSITIONS*Uint32Array.BYTES_PER_ELEMENT;
       this.arrayBuffer = new ArrayBuffer(arrayBufferSize);
     }
-    /* const {arrayBuffer} = this;
-    let index = 0;
-
-    const positions = new Float32Array(arrayBuffer, index, NUM_POSITIONS*3);
-    index += Float32Array.BYTES_PER_ELEMENT * NUM_POSITIONS*3;
-
-    const normals = new Float32Array(arrayBuffer, index, NUM_POSITIONS*3);
-    index += Float32Array.BYTES_PER_ELEMENT * NUM_POSITIONS*3;
-
-    const colors = new Float32Array(arrayBuffer, index, NUM_POSITIONS*3);
-    index += Float32Array.BYTES_PER_ELEMENT * NUM_POSITIONS*3;
-
-    const uvs = new Float32Array(arrayBuffer, index, NUM_POSITIONS*2);
-    index += Float32Array.BYTES_PER_ELEMENT * NUM_POSITIONS*2;
-
-    const ids = new Uint32Array(arrayBuffer, index, NUM_POSITIONS);
-    index += Uint32Array.BYTES_PER_ELEMENT * NUM_POSITIONS; */
 
     const geometry = new THREE.BufferGeometry();
-    /* const positionsAttribute = new THREE.BufferAttribute(positions, 3);
-    geometry.setAttribute('position', positionsAttribute);
-    const normalsAttribute = new THREE.BufferAttribute(normals, 3);
-    geometry.setAttribute('normal', normalsAttribute);
-    const colorsAttribute = new THREE.BufferAttribute(colors, 3);
-    geometry.setAttribute('color', colorsAttribute);
-    const uvsAttribute = new THREE.BufferAttribute(uvs, 2);
-    geometry.setAttribute('uv', uvsAttribute);
-    const idsAttribute = new THREE.BufferAttribute(ids, 1);
-    geometry.setAttribute('id', idsAttribute);
-    geometry.setDrawRange(0, 0); */
 
-    this.globalMaterial = makeGlobalMaterial();
+    if (!this.globalMaterial) {
+      this.globalMaterial = makeGlobalMaterial();
+    }
 
     const mesh = new THREE.Mesh(geometry, this.globalMaterial);
     mesh.frustumCulled = false;
     this.currentMesh = mesh;
-    /* this.packer = new maxrects.MaxRectsPacker(TEXTURE_SIZE, TEXTURE_SIZE, 0, {
-      smart: true,
-      pot: true,
-      square: false,
-      allowRotation: false,
-      tag: false,
-      // border: 10,
-      border: 0,
-    });
-    this.packer.images = []; */
-  }
-  pushAtlasImage(image, currentId) {
-    let spec = this.packer.images.find(o => o.image === image);
-    const hadSpec = !!spec;
-    if (!spec) {
-      spec = {
-        image,
-        currentIds: [],
-      };
-      this.packer.images.push(spec);
-    }
-    spec.currentIds.push(currentId);
-
-    if (!hadSpec) {
-      if (image.width > 512) {
-        const canvas = document.createElement('canvas');
-        canvas.width = 512;
-        canvas.height = 512*image.height/image.width;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-        image = canvas;
-      } else if (image.height > 512) {
-        const canvas = document.createElement('canvas');
-        canvas.width = 512*image.height/image.width;
-        canvas.height = 512;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-        image = canvas;
-      }
-      this.packer.add(image.width, image.height, spec);
-    }
   }
   addMesh(o) {
     o.aabb = new THREE.Box3().setFromObject(o);
     this.meshes.push(o);
-    /* o.aabb = new THREE.Box3().setFromObject(o);
-    o.aabb.min.x = Math.floor(o.aabb.min.x/CHUNK_SIZE)*CHUNK_SIZE;
-    o.aabb.max.x = Math.ceil(o.aabb.max.x/CHUNK_SIZE)*CHUNK_SIZE;
-    o.aabb.min.z = Math.floor(o.aabb.min.z/CHUNK_SIZE)*CHUNK_SIZE;
-    o.aabb.max.z = Math.ceil(o.aabb.max.z/CHUNK_SIZE)*CHUNK_SIZE;
-    this.aabb.union(o.aabb); */
     for (let i = 0; i < this.chunks.length; i++) {
       this.chunks[i].notifyMesh(o);
     }
   }
-  mergeMeshGeometry(o, mergeMaterial, forceUvs) {
-    const {geometry, material} = this.currentMesh;
-    const positionsAttribute = geometry.attributes.position;
-    const positions = positionsAttribute.array;
-    const normalsAttribute = geometry.attributes.normal;
-    const normals = normalsAttribute.array;
-    const colorsAttribute = geometry.attributes.color;
-    const colors = colorsAttribute.array;
-    const uvsAttribute = geometry.attributes.uv;
-    const uvs = uvsAttribute.array;
-    const idsAttribute = geometry.attributes.id;
-    const ids = idsAttribute.array;
-
-    o.geometry.applyMatrix4(o.matrixWorld);
-    o.matrixWorld.identity();
-    if (o.geometry.index) {
-      o.geometry = o.geometry.toNonIndexed();
-    }
-    const mat = Array.isArray(o.material) ? o.material[0] : o.material;
-    const {map} = mat;
-
-    new Float32Array(positions.buffer, positions.byteOffset + this.positionsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.position.array.length)
-      .set(o.geometry.attributes.position.array);
-    positionsAttribute.updateRange.offset = this.positionsIndex;
-    positionsAttribute.updateRange.count = o.geometry.attributes.position.array.length;
-    this.positionsIndex += o.geometry.attributes.position.array.length;
-
-    new Float32Array(normals.buffer, normals.byteOffset + this.normalsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.normal.array.length)
-      .set(o.geometry.attributes.normal.array);
-    normalsAttribute.updateRange.offset = this.normalsIndex;
-    normalsAttribute.updateRange.count = o.geometry.attributes.normal.array.length;
-    this.normalsIndex += o.geometry.attributes.normal.array.length;
-
-    colorsAttribute.updateRange.offset = this.colorsIndex;
-    colorsAttribute.updateRange.count = o.geometry.attributes.position.array.length;
-    if (o.geometry.attributes.color) {
-      for (let i = 0; i < o.geometry.attributes.color.array.length; i += o.geometry.attributes.color.itemSize) {
-        colors[this.colorsIndex++] = o.geometry.attributes.color.array[i];
-        if (o.geometry.attributes.color.itemSize >= 2) {
-          colors[this.colorsIndex++] = o.geometry.attributes.color.array[i+1];
-        } else {
-          this.colorsIndex++;
-        }
-        if (o.geometry.attributes.color.itemSize >= 3) {
-          colors[this.colorsIndex++] = o.geometry.attributes.color.array[i+2];
-        } else {
-          this.colorsIndex++;
-        }
-      }
-    } else {
-      if (o.geometry.groups.length > 0) {
-        for (let i = 0; i < o.geometry.groups.length; i++) {
-          const group = o.geometry.groups[i];
-          const {start, count, materialIndex} = group;
-          const material = o.material[materialIndex];
-          for (let j = start; j < start + count; j++) {
-            colors[this.colorsIndex + j*3] = material.color.r;
-            colors[this.colorsIndex + j*3 + 1] = material.color.g;
-            colors[this.colorsIndex + j*3 + 2] = material.color.b;
-          }
-        }
-        this.colorsIndex += o.geometry.attributes.position.array.length;
-      } else {
-        const material = Array.isArray(o.material) ? o.material[0] : o.material;
-        for (let i = 0; i < o.geometry.attributes.position.array.length; i += 3) {
-          colors[this.colorsIndex++] = material.color.r;
-          colors[this.colorsIndex++] = material.color.g;
-          colors[this.colorsIndex++] = material.color.b;
-        }
-      }
-    }
-
-    if (((map && map.image) || forceUvs) && o.geometry.attributes.uv) { // XXX won't be picked up on the second pass
-      if (mergeMaterial) {
-        this.pushAtlasImage(map.image, this.currentId);
-      }
-
-    // if (o.geometry.attributes.uv) {
-      new Float32Array(uvs.buffer, uvs.byteOffset + this.uvsIndex*Float32Array.BYTES_PER_ELEMENT, o.geometry.attributes.uv.array.length)
-        .set(o.geometry.attributes.uv.array);
-      uvsAttribute.updateRange.offset = this.uvsIndex;
-      uvsAttribute.updateRange.count = o.geometry.attributes.uv.array.length;
-      this.uvsIndex += o.geometry.attributes.uv.array.length;
-    } else {
-      this.uvsIndex += o.geometry.attributes.position.array.length/3*2;
-    }
-
-    if (o.geometry.attributes.id) {
-      new Uint32Array(ids.buffer, ids.byteOffset + this.idsIndex*Uint32Array.BYTES_PER_ELEMENT, o.geometry.attributes.id.array.length)
-        .set(o.geometry.attributes.id.array);
-      this.idsIndex += o.geometry.attributes.id.array.length;
-    } else {
-      new Uint32Array(ids.buffer, ids.byteOffset + this.idsIndex*Uint32Array.BYTES_PER_ELEMENT, o.geometry.attributes.position.array.length/3)
-        .fill(this.currentId);
-      this.idsIndex += o.geometry.attributes.position.array.length/3;
-      this.currentId++;
-    }
-
-    /* positionsAttribute.needsUpdate = true;
-    this.renderer.attributes.update(positionsAttribute, 34962);
-    normalsAttribute.needsUpdate = true;
-    this.renderer.attributes.update(normalsAttribute, 34962);
-    colorsAttribute.needsUpdate = true;
-    this.renderer.attributes.update(colorsAttribute, 34962);
-    uvsAttribute.needsUpdate = true;
-    this.renderer.attributes.update(uvsAttribute, 34962); */
-    geometry.setDrawRange(0, this.positionsIndex/3);
-  }
-  mergeMeshGeometryScene(o, mergeMaterial, forceUvs) {
-    o.updateMatrixWorld();
-    o.traverse(o => {
-      if (o.isMesh) {
-        this.mergeMeshGeometry(o, mergeMaterial, forceUvs);
-      }
-    });
-  }
-  mergePacker(packer) {
-    for (let j = 0; j < packer.images.length; j++) {
-      const {image, currentIds} = packer.images[j];
-      for (let k = 0; k < currentIds.length; k++) {
-        this.pushAtlasImage(image, currentIds[k]);
-      }
-    }
-  }
-  splitOversizedMesh(maxSize) {
-    const {currentMesh} = this;
-    const numIndices = currentMesh.geometry.attributes.position.array.length/3;
-    if (numIndices > maxSize) {
-      const result = [];
-      for (let index = 0; index < numIndices; index += maxSize) {
-        const positions = new Float32Array(currentMesh.geometry.attributes.position.array.buffer, currentMesh.geometry.attributes.position.array.byteOffset + index*3*Float32Array.BYTES_PER_ELEMENT, currentMesh.geometry.drawRange.count*3);
-        const normals = new Float32Array(currentMesh.geometry.attributes.normal.array.buffer, currentMesh.geometry.attributes.normal.array.byteOffset + index*3*Float32Array.BYTES_PER_ELEMENT, currentMesh.geometry.drawRange.count*3);
-        const colors = new Float32Array(currentMesh.geometry.attributes.color.array.buffer, currentMesh.geometry.attributes.color.array.byteOffset + index*3*Float32Array.BYTES_PER_ELEMENT, currentMesh.geometry.drawRange.count*3);
-        const uvs = new Float32Array(currentMesh.geometry.attributes.uv.array.buffer, currentMesh.geometry.attributes.uv.array.byteOffset + index*2*Float32Array.BYTES_PER_ELEMENT, currentMesh.geometry.drawRange.count*2);
-        const ids = new Uint32Array(currentMesh.geometry.attributes.id.array.buffer, currentMesh.geometry.attributes.id.array.byteOffset + index*Float32Array.BYTES_PER_ELEMENT, currentMesh.geometry.drawRange.count);
-
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-        geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
-        geometry.setAttribute('id', new THREE.BufferAttribute(ids, 1));
-
-        const material = makeGlobalMaterial();
-        const mesh = new THREE.Mesh(geometry, maxSize);
-        // mesh.frustumCulled = false;
-        result.push(mesh);
-      }
-      return result;
-    } else {
-      return [this.currentMesh];
-    }
-  }
-  async decimateMesh(x, z, minTris) {
-    const {currentMesh} = this;
-
-    const positions = new Float32Array(currentMesh.geometry.attributes.position.array.buffer, currentMesh.geometry.attributes.position.array.byteOffset, currentMesh.geometry.drawRange.count*3);
-
-    currentMesh.aabb = new THREE.Box3().setFromObject(currentMesh);
-    currentMesh.aabb.min.x = Math.floor(currentMesh.aabb.min.x/CHUNK_SIZE)*CHUNK_SIZE;
-    currentMesh.aabb.max.x = Math.ceil(currentMesh.aabb.max.x/CHUNK_SIZE)*CHUNK_SIZE;
-    currentMesh.aabb.min.z = Math.floor(currentMesh.aabb.min.z/CHUNK_SIZE)*CHUNK_SIZE;
-    currentMesh.aabb.max.z = Math.ceil(currentMesh.aabb.max.z/CHUNK_SIZE)*CHUNK_SIZE;
-
-    const {arrayBuffer} = this;
-    this.arrayBuffer = null;
-    /* const shift = currentMesh.aabb.min.clone();
-    const size = currentMesh.aabb.getSize(new THREE.Vector3());
-    const sizeVector = Math.max(size.x, size.y, size.z);
-    size.set(sizeVector, sizeVector, sizeVector); */
-    const res = await this.worker.request({
-      method: 'decimateMarch',
-      positions,
-      arrayBuffer,
-      dims: [200, 200, 200],
-      shift: [x, -8, z],
-      size: [16, 16, 16],
-    }, [arrayBuffer]);
-    this.arrayBuffers.push(res.arrayBuffer);
-
-    /* currentMesh.position.x = x;
-    currentMesh.position.y = -8;
-    currentMesh.position.z = z;
-    currentMesh.updateMatrixWorld(); */
-    /* currentMesh.position.copy(currentMesh.aabb.min);
-    currentMesh.scale.copy(size);
-    currentMesh.updateMatrixWorld(); */
-
-    currentMesh.geometry.setAttribute('position', new THREE.BufferAttribute(res.positions, 3));
-    currentMesh.geometry.deleteAttribute('normal', undefined);
-    const c = new THREE.Color(Math.random(), Math.random(), Math.random());
-    const cs = new Float32Array(res.positions.length);
-    for (let i = 0; i < res.positions.length; i += 3) {
-      cs[i] = c.r;
-      cs[i+1] = c.g;
-      cs[i+2] = c.b;
-    }
-    currentMesh.geometry.setAttribute('color', new THREE.BufferAttribute(cs, 3));
-    currentMesh.geometry.deleteAttribute('uv', undefined);
-    currentMesh.geometry.deleteAttribute('id', undefined);
-    currentMesh.geometry.setIndex(new THREE.BufferAttribute(res.indices, 1));
-    currentMesh.geometry = currentMesh.geometry.toNonIndexed();
-    currentMesh.geometry.computeVertexNormals();
-    currentMesh.geometry.setDrawRange(0, Infinity);
-
-    /* currentMesh.aabb = new THREE.Box3().setFromObject(currentMesh);
-    currentMesh.aabb.min.x = Math.floor(currentMesh.aabb.min.x/CHUNK_SIZE)*CHUNK_SIZE;
-    currentMesh.aabb.max.x = Math.ceil(currentMesh.aabb.max.x/CHUNK_SIZE)*CHUNK_SIZE;
-    currentMesh.aabb.min.z = Math.floor(currentMesh.aabb.min.z/CHUNK_SIZE)*CHUNK_SIZE;
-    currentMesh.aabb.max.z = Math.ceil(currentMesh.aabb.max.z/CHUNK_SIZE)*CHUNK_SIZE; */
-    currentMesh.packer = this.packer;
-
-    currentMesh.x = 0;
-    currentMesh.z = 0;
-
-    return currentMesh;
-  }
-  repackTexture() {
-    const {currentMesh, globalMaterial, packer} = this;
-
-    const canvas = document.createElement('canvas');
-    canvas.width = packer.width;
-    canvas.height = packer.height;
-    packer.repack(false);
-    if (packer.bins.length > 0) {
-      const {bins: [{rects}]} = packer;
-
-      const scale = packer.width/canvas.width;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#FFF';
-      ctx.fillRect(0, 0, 1, 1);
-
-      const rectById = [];
-      for (let i = 0; i < rects.length; i++) {
-        const rect = rects[i];
-        let {x, y, width: w, height: h, data: {image, currentIds}} = rect;
-        x++;
-
-        ctx.drawImage(image, x/scale, y/scale, w/scale, h/scale);
-
-        for (let i = 0; i < currentIds.length; i++) {
-          const currentId = currentIds[i];
-          rectById[currentId] = rect;
-        }
-      }
-
-      const uvs = currentMesh.geometry.attributes.uv.array;
-      const ids = currentMesh.geometry.attributes.id.array;
-      for (let i = 0; i < ids.length; i++) {
-        const id = ids[i];
-        const rect = rectById[id];
-
-        if (rect) {
-          let {x, y, width: w, height: h} = rect;
-          x++;
-
-          while (ids[i] === id) {
-            let u = uvs[i*2];
-            let v = uvs[i*2+1];
-            if (u !== 0 || v !== 0) {
-              u = Math.min(Math.max(u, 0), 1);
-              v = Math.min(Math.max(v, 0), 1);
-              u = (x + u*w)/packer.width;
-              v = (y + v*h)/packer.height;
-            }
-            uvs[i*2] = u;
-            uvs[i*2+1] = v;
-
-            i++;
-          }
-          i--;
-        }
-      }
-      currentMesh.geometry.attributes.uv.updateRange.offset = 0;
-      currentMesh.geometry.attributes.uv.updateRange.count = -1;
-      currentMesh.geometry.attributes.uv.needsUpdate = true;
-      globalMaterial.map = makeTexture(canvas);
-      globalMaterial.needsUpdate = true;
-    }
-  }
-  async chunkMesh(x, z) {
-    const {currentMesh, globalMaterial} = this;
-
-    const positions = new Float32Array(currentMesh.geometry.attributes.position.array.buffer, currentMesh.geometry.attributes.position.array.byteOffset, currentMesh.geometry.drawRange.count*3);
-    const normals = new Float32Array(currentMesh.geometry.attributes.normal.array.buffer, currentMesh.geometry.attributes.normal.array.byteOffset, currentMesh.geometry.drawRange.count*3);
-    const colors = new Float32Array(currentMesh.geometry.attributes.color.array.buffer, currentMesh.geometry.attributes.color.array.byteOffset, currentMesh.geometry.drawRange.count*3);
-    const uvs = new Float32Array(currentMesh.geometry.attributes.uv.array.buffer, currentMesh.geometry.attributes.uv.array.byteOffset, currentMesh.geometry.drawRange.count*2);
-    const ids = new Uint32Array(currentMesh.geometry.attributes.id.array.buffer, currentMesh.geometry.attributes.id.array.byteOffset, currentMesh.geometry.drawRange.count);
-    // const indices = currentMesh.geometry.index.array;
-    const indices = new Uint32Array(positions.length/3);
-    for (let i = 0; i < indices.length; i++) {
-      indices[i] = i;
-    }
-
-    const mins = [x, 0, z];
-    const maxs = [x+CHUNK_SIZE, 0, z+CHUNK_SIZE];
-    const {arrayBuffer} = this;
-    this.arrayBuffer = null;
-    const res = await this.worker.request({
-      method: 'chunkOne',
-      positions,
-      normals,
-      colors,
-      uvs,
-      ids,
-      indices,
-      mins,
-      maxs,
-      arrayBuffer,
-    }, [arrayBuffer]);
-    this.arrayBuffers.push(res.arrayBuffer);
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(res.positions, 3));
-    geometry.setAttribute('normal', new THREE.BufferAttribute(res.normals, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(res.colors, 3));
-    geometry.setAttribute('uv', new THREE.BufferAttribute(res.uvs, 2));
-    geometry.setAttribute('id', new THREE.BufferAttribute(res.ids, 1));
-    // geometry.setIndex(new THREE.BufferAttribute(res.indices[i], 1));
-    // geometry.computeVertexNormals();
-
-    const mesh = new THREE.Mesh(geometry, globalMaterial);
-    mesh.frustumCulled = false;
-
-    mesh.x = x/CHUNK_SIZE;
-    mesh.z = z/CHUNK_SIZE;
-
-    return mesh;
-  }
   getMeshesInAabb(aabb) {
     return this.meshes.filter(m => m.aabb.intersectsBox(aabb));
   }
-  /* getMeshBudgets(meshes) {
-    let chunkWeights = {};
-    for (let x = this.aabb.min.x; x < this.aabb.max.x; x += CHUNK_SIZE) {
-      for (let z = this.aabb.min.z; z < this.aabb.max.z; z += CHUNK_SIZE) {
-        const k = x + ':' + z;
-        if (chunkWeights[k] === undefined) {
-          chunkWeights[k] = this.getMeshesInChunk(x, z).length;
-        }
-      }
-    }
-    return meshes.map(m => {
-      let budget = 0;
-      for (let x = m.aabb.min.x; x < m.aabb.max.x; x += CHUNK_SIZE) {
-        for (let z = m.aabb.min.z; z < m.aabb.max.z; z += CHUNK_SIZE) {
-          const k = x + ':' + z;
-          budget += 1/chunkWeights[k];
-        }
-      }
-      return budget;
-    });
-  } */
   initVoxelize(newWidth, newSize, newPixelRatio) {
     voxelWidth = newWidth;
     voxelSize = newSize;
