@@ -37,6 +37,7 @@ import {MTLLoader} from './MTLLoader.js';
 import {BufferGeometryUtils} from './BufferGeometryUtils.js';
 import {Mesher, makeGlobalMaterial, makeTexture, CHUNK_SIZE} from './mesher.js';
 import modelFiles from './model-files.js';
+import BezierEasing from './cubic-bezier.js';
 
 function makePromise() {
   let accept, reject;
@@ -48,6 +49,7 @@ function makePromise() {
   p.reject = reject;
   return p;
 }
+const easing = BezierEasing(0, 1, 0, 1);
 
 const canvas = document.getElementById('canvas');
 canvas.width = window.innerWidth;
@@ -303,6 +305,10 @@ const rightWallGeometry = wallGeometry.clone()
 const bottomWallGeometry = wallGeometry.clone()
   .applyMatrix4(new THREE.Matrix4().makeRotationAxis(new THREE.Vector3(0, 1, 0), Math.PI))
   // .applyMatrix4(new THREE.Matrix4().makeTranslation(-0.5, 0, -0.5));
+const floorGeometry = new THREE.PlaneBufferGeometry(1, 1)
+  .applyMatrix4(new THREE.Matrix4().makeScale(0.99, 0.99, 1))
+  .applyMatrix4(new THREE.Matrix4().makeTranslation(0.5, -0.5, 0.01))
+  .applyMatrix4(new THREE.Matrix4().makeRotationAxis(new THREE.Vector3(1, 0, 0), -Math.PI/2));
 const _makeParcelMesh = (extents, color) => {
   const geometry = (() => {
     const geometries = [];
@@ -310,10 +316,10 @@ const _makeParcelMesh = (extents, color) => {
     const w = ax2 - ax1;
     const h = ay2 - ay1;
     geometries.push(
-      new THREE.PlaneBufferGeometry(1, 1)
-        .applyMatrix4(new THREE.Matrix4().makeScale(w, h, 0))
-        .applyMatrix4(new THREE.Matrix4().makeTranslation(w/2, -h/2, 0.01))
-        .applyMatrix4(new THREE.Matrix4().makeRotationAxis(new THREE.Vector3(1, 0, 0), -Math.PI/2))
+      floorGeometry.clone()
+        // .applyMatrix4(new THREE.Matrix4().makeTranslation(0, 0, 1))
+        .applyMatrix4(new THREE.Matrix4().makeScale(w, 1, h))
+        .applyMatrix4(new THREE.Matrix4().makeTranslation(ax1, 0, ay1))
     );
     for (let x = ax1; x < ax2; x++) {
       geometries.push(
@@ -340,9 +346,12 @@ const _makeParcelMesh = (extents, color) => {
   const gridVsh = `
     // varying vec3 vWorldPos;
     // varying vec2 vUv;
+    uniform float uStart;
     varying float vDepth;
     void main() {
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.);
+      vec3 p = position;
+      p.y *= uStart;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.);
       // vUv = uv;
       // vWorldPos = abs(position);
       vDepth = gl_Position.z / ${distanceFactor.toFixed(8)};
@@ -355,8 +364,9 @@ const _makeParcelMesh = (extents, color) => {
     // varying vec3 vWorldPos;
     varying float vDepth;
     void main() {
-      vec3 c = uColor + uFlash;
-      float a = (1.0-vDepth)*0.5;
+      float f = uFlash*0.5;
+      vec3 c = uColor*(1.0-f) + f;
+      float a = (1.0-vDepth)*0.3;
       gl_FragColor = vec4(c, a);
     }
   `;
@@ -365,6 +375,10 @@ const _makeParcelMesh = (extents, color) => {
       uColor: {
         type: 'c',
         value: new THREE.Color(color),
+      },
+      uStart: {
+        type: 'f',
+        value: 0,
       },
       uFlash: {
         type: 'f',
@@ -376,15 +390,32 @@ const _makeParcelMesh = (extents, color) => {
     transparent: true,
   });
   const mesh = new THREE.Mesh(geometry, material);
+  mesh.startTime = Date.now();
   mesh.frustumCulled = false;
   mesh.setColor = c => {
     mesh.material.uniforms.uColor.value.setHex(c);
   };
   return mesh;
 };
-
-const parcelMesh = _makeParcelMesh([[0, 0, 8, 8]], 0xffa726);
-container.add(parcelMesh);
+const parcels = {};
+const parcelMeshes = [];
+const _loadParcelMeshes = p => {
+  let cx = Math.floor(p.x/8);
+  let cz = Math.floor(p.z/8);
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dz = -1; dz <= 1; dz++) {
+      const ax = cx+dx;
+      const az = cz+dz;
+      const k = ax + ':' + az;
+      if (!parcels[k]) {
+        const parcelMesh = _makeParcelMesh([[ax*8, az*8, ax*8+8, az*8+8]], 0x66bb6a);
+        container.add(parcelMesh);
+        parcelMeshes.push(parcelMesh);
+        parcels[k] = true;
+      }
+    }
+  }
+};
 
 const mesher = new Mesher(renderer);
 // container.add(mesher.currentMesh);
@@ -614,7 +645,11 @@ let meshes = [];
 function animate() {
   orbitControls.enabled && orbitControls.update();
 
-  parcelMesh.material.uniforms.uFlash.value = 1-(Date.now() % 1000)/1000;
+  _loadParcelMeshes(orbitControls.target);
+  parcelMeshes.forEach(parcelMesh => {
+    parcelMesh.material.uniforms.uFlash.value = 1-((Date.now() - parcelMesh.startTime) % 1000)/1000;
+    parcelMesh.material.uniforms.uStart.value = Math.min(easing((Date.now() - parcelMesh.startTime)/2000), 1);
+  });
 
   /* const f = (Math.sin((Date.now()%1000)/1000*Math.PI*2)+1)/2*0.3;
   for (let i = 0; i < meshes.length; i++) {
