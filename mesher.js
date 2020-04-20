@@ -755,7 +755,7 @@ class Mesher {
     const aabb = new THREE.Box3().setFromObject(m);
     const center = aabb.getCenter(new THREE.Vector3());
     const size = aabb.getSize(new THREE.Vector3());
-    size.multiplyScalar(1.2);
+    size.multiplyScalar(1.5);
 
     const voxelResolution = size.clone().divideScalar(voxelWidth);
 
@@ -804,7 +804,7 @@ class Mesher {
     // console.log('got res', res);
     this.arrayBuffers.push(res.arrayBuffer);
 
-    console.log('march potentials 2', res);
+    // console.log('march potentials 2', res);
 
     const mesh = new THREE.Mesh(new THREE.BufferGeometry(), this.globalMaterial);
     mesh.geometry.setAttribute('position', new THREE.BufferAttribute(res.positions, 3));

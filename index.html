@@ -535,7 +535,7 @@ let meshes = [];
   const pixelRatio = 3;
   mesher.initVoxelize(voxelWidth, voxelSize, pixelRatio);
 
-  /* {
+  (async () => {
     const objs = modelFiles.filter(m => /\.obj/.test(m));
     const rowSize = 10;
     const numItems = 10;
@@ -567,14 +567,16 @@ let meshes = [];
             .applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI)))
             .applyMatrix4(new THREE.Matrix4().makeTranslation(-rowSize/2 + x, 0, z));
           o.material = materials;
-          mesher.addMesh(o);
+          // mesher.addMesh(o);
         }
       });
+      const mesh = await mesher.voxelize(o);
       // container.add(o);
+      container.add(mesh);
     }
-  }
+  })();
 
-  {
+  /* {
     const p = makePromise();
     new GLTFLoader(manager).load('models/mountain.glb', p.accept, function onProgress() {}, p.reject);
     const o = await p;
@@ -595,12 +597,6 @@ let meshes = [];
     const mesh = await mesher.voxelize(o.scene);
     container.add(mesh);
     // mesher.addMesh(o.scene);
-  }
-  {
-    const p = makePromise();
-    new GLTFLoader(manager).load('models/model.vrm', p.accept, function onProgress() {}, p.reject);
-    const o = await p;
-    scene.add(o.scene);
   }
 
   /* {
