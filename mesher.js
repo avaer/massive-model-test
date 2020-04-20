@@ -1,7 +1,15 @@
 import THREE from './three.module.js';
-// import maxrects from './maxrects-packer.min.js';
+import {GLTFLoader} from './GLTFLoader.js';
+import {LegacyGLTFLoader} from './LegacyGLTFLoader.js';
+import {OBJLoader2} from './OBJLoader2.js';
+import {MTLLoader} from './MTLLoader.js';
+import {GLTFExporter} from './GLTFExporter.js';
 
 const NUM_POSITIONS = 1 * 1024 * 1024;
+const voxelWidth = 15;
+const voxelSize = 1;
+const pixelRatio = 3;
+const voxelResolution = voxelSize / voxelWidth;
 
 const localVector = new THREE.Vector3();
 const localVector2 = new THREE.Vector3();
@@ -9,35 +17,21 @@ const localQuaternion = new THREE.Quaternion();
 const localColor = new THREE.Color();
 const localColor2 = new THREE.Color();
 
-function mod(a, n) {
+/* function mod(a, n) {
   return ((a%n)+n)%n;
+} */
+function makePromise() {
+  let accept, reject;
+  const p = new Promise((a, r) => {
+    accept = a;
+    reject = r;
+  });
+  p.accept = accept;
+  p.reject = reject;
+  return p;
 }
 
-let voxelWidth = 0;
-let voxelSize = 0;
-let voxelResolution = 0;
-let pixelRatio = 0;
-let canvas = null;
-let renderer = null;
-let xrRaycaster = null;
-const scene = new THREE.Scene();
-// scene.autoUpdate = false;
-
-const ambientLight = new THREE.AmbientLight(0xFFFFFF);
-scene.add(ambientLight);
-
-const directionalLight = new THREE.DirectionalLight(0xFFFFFF, 3);
-directionalLight.position.set(0.5, 1, 0.5).multiplyScalar(100);
-/* directionalLight.castShadow = true;
-directionalLight.shadow.mapSize.width = 1024;
-directionalLight.shadow.mapSize.height = 1024;
-directionalLight.shadow.camera.near = 0.5;
-directionalLight.shadow.camera.far = 500; */
-scene.add(directionalLight);
-
-const directionalLight2 = new THREE.DirectionalLight(0xFFFFFF, 3);
-directionalLight2.position.set(-0.5, -0.1, 0.5).multiplyScalar(100);
-scene.add(directionalLight2);
+const manager = new THREE.LoadingManager();
 
 const depthMaterial = (() => {
   const depthVsh = `
@@ -171,33 +165,6 @@ const makeGlobalMaterial = () => new THREE.ShaderMaterial({
     derivatives: true,
   },
 });
-const _makeWasmWorker = () => {
-  console.log('make wasm worker');
-  let cbs = [];
-  const w = new Worker('mc-worker.js', {
-    type: 'module',
-  });
-  w.onmessage = e => {
-    const {data} = e;
-    const {error, result} = data;
-    cbs.shift()(error, result);
-  };
-  w.onerror = err => {
-    console.warn(err);
-  };
-  w.request = (req, transfers) => new Promise((accept, reject) => {
-    w.postMessage(req, transfers);
-
-    cbs.push((err, result) => {
-      if (!err) {
-        accept(result);
-      } else {
-        reject(err);
-      }
-    });
-  });
-  return w;
-};
 
 export class XRRaycaster {
   constructor({width = 512, height = 512, pixelRatio = 1, voxelSize, renderer = new THREE.WebGLRenderer(), onDepthRender = (target, camera) => {}} = {}) {
@@ -299,150 +266,87 @@ class Allocator {
 }
 
 class Mesher {
-  constructor(renderer) {
-    this.renderer = renderer;
+  constructor() {
+    this.worker = (() => {
+      let cbs = [];
+      const w = new Worker('mc-worker.js', {
+        type: 'module',
+      });
+      w.onmessage = e => {
+        const {data} = e;
+        const {error, result, type} = data;
+        if (error || result) {
+          cbs.shift()(error, result);
+        } else if (type) {
+          switch (type) {
+            case 'previewMesh': {
+              console.log('got preview mesh', data);
+              break;
+            }
+            case 'mesh': {
+              console.log('got mesh', data);
+              break;
+            }
+            default: {
+              console.warn('unknown message type', data);
+              break;
+            }
+          }
+        } else {
+          console.warn('unknown message format', data);
+        }
+      };
+      w.onerror = err => {
+        console.warn(err);
+      };
+      w.request = (req, transfers) => new Promise((accept, reject) => {
+        w.postMessage(req, transfers);
 
-    this.worker = _makeWasmWorker();
+        cbs.push((err, result) => {
+          if (!err) {
+            accept(result);
+          } else {
+            reject(err);
+          }
+        });
+      });
+      return w;
+    })();
 
-    this.globalMaterial = null
-    this.meshes = [];
-    this.aabb = new THREE.Box3();
-    this.arrayBuffer = null;
-    this.arrayBuffers = [];
+    // this.globalMaterial = null
+    // this.arrayBuffer = null;
+    // this.arrayBuffers = [];
     this.chunks = [];
-
-    // this.dbpCache = {};
-
-    // this.reset();
   }
-  reset() {
-    if (!this.arrayBuffer) {
-      this.arrayBuffer = this.arrayBuffers.pop();
-    }
-    if (!this.arrayBuffer) {
-      const arrayBufferSize =
-        NUM_POSITIONS*3*Float32Array.BYTES_PER_ELEMENT +
-        NUM_POSITIONS*3*Float32Array.BYTES_PER_ELEMENT +
-        NUM_POSITIONS*3*Float32Array.BYTES_PER_ELEMENT +
-        NUM_POSITIONS*2*Float32Array.BYTES_PER_ELEMENT +
-        NUM_POSITIONS*Uint32Array.BYTES_PER_ELEMENT;
-      this.arrayBuffer = new ArrayBuffer(arrayBufferSize);
-    }
-
-    const geometry = new THREE.BufferGeometry();
-
-    if (!this.globalMaterial) {
-      this.globalMaterial = makeGlobalMaterial();
-    }
-
-    /* const mesh = new THREE.Mesh(geometry, this.globalMaterial);
-    mesh.frustumCulled = false;
-    this.currentMesh = mesh; */
-  }
-  addMesh(o) {
-    o.aabb = new THREE.Box3().setFromObject(o);
-    this.meshes.push(o);
-    for (let i = 0; i < this.chunks.length; i++) {
-      this.chunks[i].notifyMesh(o);
-    }
-  }
-  getMeshesInAabb(aabb) {
-    return this.meshes.filter(m => m.aabb.intersectsBox(aabb));
-  }
-  initVoxelize(newWidth, newSize, newPixelRatio) {
-    voxelWidth = newWidth;
-    voxelSize = newSize;
-    voxelResolution = voxelSize / voxelWidth;
-    pixelRatio = newPixelRatio;
-    canvas = new OffscreenCanvas(1, 1);
-    renderer = new THREE.WebGLRenderer({
-      canvas,
-    });
-    // document.body.appendChild(renderer.domElement);
-    xrRaycaster = new XRRaycaster({
-      width: voxelWidth,
-      height: voxelWidth,
-      pixelRatio,
-      voxelSize,
-      renderer,
-      onDepthRender,
+  async addMesh(url, position) {
+    await this.worker.request({
+      method: 'addMesh',
+      url,
+      position: position.toArray(),
     });
   }
-  async voxelize(m) {
-    m.updateMatrixWorld();
-    m.traverse(o => {
-      if (o.isMesh) {
-        o.frustumCulled = false;
-        o.isSkinnedMesh = false;
-      }
+  async registerChunk(aabb) {
+    await this.worker.request({
+      method: 'registerChunk',
+      aabb: {
+        min: aabb.min.toArray(),
+        max: aabb.max.toArray(),
+      },
     });
-    scene.add(m);
-
-    const aabb = new THREE.Box3().setFromObject(m);
-    const center = aabb.getCenter(new THREE.Vector3());
-    const size = aabb.getSize(new THREE.Vector3());
-    size.multiplyScalar(1.5);
-
-    const voxelResolution = size.clone().divideScalar(voxelWidth);
-
-    const _multiplyLength = (a, b) => a.x*b.x + a.y*b.y + a.z*b.z;
-
-    const depthTextures = new Float32Array(voxelWidth * pixelRatio * voxelWidth * pixelRatio * 4 * 6);
-    // depthTextures.fill(Infinity);
-    [
-      [center.x, center.y, center.z + size.z/2, 0, 0, new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)],
-      [center.x + size.x/2, center.y, center.z, Math.PI/2, 0, new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0), new THREE.Vector3(1, 0, 0)],
-      [center.x, center.y, center.z - size.z/2, Math.PI/2*2, 0, new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)],
-      [center.x - size.x/2, center.y, center.z, Math.PI/2*3, 0, new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0), new THREE.Vector3(1, 0, 0)],
-      [center.x, center.y + size.y/2, center.z, 0, -Math.PI/2, new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0)],
-      [center.x, center.y - size.y/2, center.z, 0, Math.PI/2, new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0)],
-    ].forEach(([x, y, z, ry, rx, sx, sy, sz], i) => {
-      if (ry !== 0) {
-        localQuaternion.setFromAxisAngle(localVector.set(0, 1, 0), ry);
-      } else if (rx !== 0) {
-        localQuaternion.setFromAxisAngle(localVector.set(1, 0, 0), rx);
-      } else {
-        localQuaternion.set(0, 0, 0, 1);
-      }
-      xrRaycaster.updateView(x, y, z, localQuaternion);
-      xrRaycaster.updateSize(_multiplyLength(size, sx), _multiplyLength(size, sy), _multiplyLength(size, sz));
-      xrRaycaster.renderDepthTexture(i);
+  }
+  async unregisterChunk(aabb) {
+    await this.worker.request({
+      method: 'unregisterChunk',
+      aabb: {
+        min: aabb.min.toArray(),
+        max: aabb.max.toArray(),
+      },
     });
-    for (let i = 0; i < 6; i++) {
-      xrRaycaster.getDepthBufferPixels(i, depthTextures, voxelWidth * pixelRatio * voxelWidth * pixelRatio * 4 * i);
-    }
-
-    this.reset();
-
-    const {arrayBuffer} = this;
-    this.arrayBuffer = null;
-    const res = await this.worker.request({
-      method: 'marchPotentials',
-      depthTextures,
-      dims: [voxelWidth, voxelWidth, voxelWidth],
-      shift: [voxelResolution.x/2 + center.x - size.x/2, voxelResolution.y/2 + center.y - size.y/2, voxelResolution.z/2 + center.z - size.z/2],
-      size: [size.x, size.y, size.z],
-      pixelRatio,
-      value: 1,
-      nvalue: -1,
-      arrayBuffer,
-    }, [arrayBuffer]);
-    // console.log('got res', res);
-    this.arrayBuffers.push(res.arrayBuffer);
-
-    // console.log('march potentials 2', res);
-
-    const mesh = new THREE.Mesh(new THREE.BufferGeometry(), this.globalMaterial);
-    mesh.geometry.setAttribute('position', new THREE.BufferAttribute(res.positions, 3));
-    mesh.geometry.setAttribute('barycentric', new THREE.BufferAttribute(res.barycentrics, 3));
-
-    scene.remove(m);
-
-    return mesh;
   }
   getChunk(aabb) {
     const chunk = new EventTarget();
-    (async () => {
+    this.registerChunk(aabb);
+    /* (async () => {
       const meshes = this.getMeshesInAabb(aabb);
       const previewMeshes = [];
       for (let i = 0; i < meshes.length; i++) {
@@ -481,8 +385,9 @@ class Mesher {
           }
         }));
       }
-    };
+    }; */
     chunk.destroy = () => {
+      this.unregisterChunk(aabb);
       this.chunks.splice(this.chunks.indexOf(chunk), 1);
     };
     this.chunks.push(chunk);
@@ -491,74 +396,247 @@ class Mesher {
 }
 
 class MesherServer {
-  handleMessage(data) {
+  constructor() {
+    const canvas = new OffscreenCanvas(1, 1);
+    this.canvas = canvas;
+    const context = canvas.getContext('webgl2');
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      context,
+    });
+    this.renderer = renderer;
+
+    const scene = new THREE.Scene();
+
+    const ambientLight = new THREE.AmbientLight(0xFFFFFF);
+    scene.add(ambientLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xFFFFFF, 3);
+    directionalLight.position.set(0.5, 1, 0.5).multiplyScalar(100);
+    scene.add(directionalLight);
+
+    const directionalLight2 = new THREE.DirectionalLight(0xFFFFFF, 3);
+    directionalLight2.position.set(-0.5, -0.1, 0.5).multiplyScalar(100);
+    scene.add(directionalLight2);
+
+    this.scene = scene;
+
+    this.xrRaycaster = new XRRaycaster({
+      width: voxelWidth,
+      height: voxelWidth,
+      pixelRatio,
+      voxelSize,
+      renderer,
+      onDepthRender,
+    });
+    this.meshes = [];
+    this.chunks = [];
+  }
+  /* reset() {
+    if (!this.arrayBuffer) {
+      this.arrayBuffer = this.arrayBuffers.pop();
+    }
+    if (!this.arrayBuffer) {
+      const arrayBufferSize =
+        NUM_POSITIONS*3*Float32Array.BYTES_PER_ELEMENT +
+        NUM_POSITIONS*3*Float32Array.BYTES_PER_ELEMENT +
+        NUM_POSITIONS*3*Float32Array.BYTES_PER_ELEMENT +
+        NUM_POSITIONS*2*Float32Array.BYTES_PER_ELEMENT +
+        NUM_POSITIONS*Uint32Array.BYTES_PER_ELEMENT;
+      this.arrayBuffer = new ArrayBuffer(arrayBufferSize);
+    }
+
+    if (!this.globalMaterial) {
+      this.globalMaterial = makeGlobalMaterial();
+    }
+  } */
+  pushMesh(o) {
+    o.aabb = new THREE.Box3().setFromObject(o);
+    this.meshes.push(o);
+    for (let i = 0; i < this.chunks.length; i++) {
+      this.chunks[i].notifyMesh(o);
+    }
+  }
+  async voxelize(m) {
+    m.updateMatrixWorld();
+    m.traverse(o => {
+      if (o.isMesh) {
+        o.frustumCulled = false;
+        o.isSkinnedMesh = false;
+      }
+    });
+    this.scene.add(m);
+
+    const aabb = new THREE.Box3().setFromObject(m);
+    const center = aabb.getCenter(new THREE.Vector3());
+    const size = aabb.getSize(new THREE.Vector3());
+    size.multiplyScalar(1.5);
+
+    const voxelResolution = size.clone().divideScalar(voxelWidth);
+
+    const _multiplyLength = (a, b) => a.x*b.x + a.y*b.y + a.z*b.z;
+
+    const depthTextures = new Float32Array(voxelWidth * pixelRatio * voxelWidth * pixelRatio * 4 * 6);
+    // depthTextures.fill(Infinity);
+    [
+      [center.x, center.y, center.z + size.z/2, 0, 0, new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)],
+      [center.x + size.x/2, center.y, center.z, Math.PI/2, 0, new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0), new THREE.Vector3(1, 0, 0)],
+      [center.x, center.y, center.z - size.z/2, Math.PI/2*2, 0, new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)],
+      [center.x - size.x/2, center.y, center.z, Math.PI/2*3, 0, new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0), new THREE.Vector3(1, 0, 0)],
+      [center.x, center.y + size.y/2, center.z, 0, -Math.PI/2, new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0)],
+      [center.x, center.y - size.y/2, center.z, 0, Math.PI/2, new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0)],
+    ].forEach(([x, y, z, ry, rx, sx, sy, sz], i) => {
+      if (ry !== 0) {
+        localQuaternion.setFromAxisAngle(localVector.set(0, 1, 0), ry);
+      } else if (rx !== 0) {
+        localQuaternion.setFromAxisAngle(localVector.set(1, 0, 0), rx);
+      } else {
+        localQuaternion.set(0, 0, 0, 1);
+      }
+      xrRaycaster.updateView(x, y, z, localQuaternion);
+      xrRaycaster.updateSize(_multiplyLength(size, sx), _multiplyLength(size, sy), _multiplyLength(size, sz));
+      xrRaycaster.renderDepthTexture(i);
+    });
+    for (let i = 0; i < 6; i++) {
+      xrRaycaster.getDepthBufferPixels(i, depthTextures, voxelWidth * pixelRatio * voxelWidth * pixelRatio * 4 * i);
+    }
+
+    this.scene.remove(m);
+
+    // this.reset();
+
+    // const {arrayBuffer} = this;
+    // this.arrayBuffer = null;
+    const res = await this.marchPotentials({
+      // method: 'marchPotentials',
+      depthTextures,
+      dims: [voxelWidth, voxelWidth, voxelWidth],
+      shift: [voxelResolution.x/2 + center.x - size.x/2, voxelResolution.y/2 + center.y - size.y/2, voxelResolution.z/2 + center.z - size.z/2],
+      size: [size.x, size.y, size.z],
+      pixelRatio,
+      value: 1,
+      nvalue: -1,
+      // arrayBuffer,
+    });
+    // console.log('got res', res);
+    // this.arrayBuffers.push(res.arrayBuffer);
+
+    // console.log('march potentials 2', res);
+
+    const mesh = new THREE.Mesh(new THREE.BufferGeometry(), this.globalMaterial);
+    mesh.geometry.setAttribute('position', new THREE.BufferAttribute(res.positions, 3));
+    mesh.geometry.setAttribute('barycentric', new THREE.BufferAttribute(res.barycentrics, 3));
+
+    return mesh;
+  }
+  async marchPotentials(data) {
+    const {depthTextures: depthTexturesData, dims: dimsData, shift: shiftData, size: sizeData, pixelRatio, value, nvalue, arrayBuffer} = data;
+
+    const allocator = new Allocator();
+
+    const depthTextures = allocator.alloc(Float32Array, depthTexturesData.length);
+    depthTextures.set(depthTexturesData);
+
+    const positions = allocator.alloc(Float32Array, 1024*1024*Float32Array.BYTES_PER_ELEMENT);
+    const barycentrics = allocator.alloc(Float32Array, 1024*1024*Float32Array.BYTES_PER_ELEMENT);
+
+    const numPositions = allocator.alloc(Uint32Array, 1);
+    numPositions[0] = positions.length;
+    const numBarycentrics = allocator.alloc(Uint32Array, 1);
+    numBarycentrics[0] = barycentrics.length;
+
+    const dims = allocator.alloc(Int32Array, 3);
+    dims.set(Int32Array.from(dimsData));
+
+    const shift = allocator.alloc(Float32Array, 3);
+    shift.set(Float32Array.from(shiftData));
+
+    const size = allocator.alloc(Float32Array, 3);
+    size.set(Float32Array.from(sizeData));
+
+    self.Module._doMarchPotentials(
+      depthTextures.offset,
+      dims.offset,
+      shift.offset,
+      size.offset,
+      pixelRatio,
+      value,
+      nvalue,
+      positions.offset,
+      barycentrics.offset,
+      numPositions.offset,
+      numBarycentrics.offset
+    );
+
+    // console.log('out num positions', numPositions[0], numBarycentrics[0]);
+
+    const arrayBuffer2 = new ArrayBuffer(
+      Uint32Array.BYTES_PER_ELEMENT +
+      numPositions[0]*Float32Array.BYTES_PER_ELEMENT +
+      Uint32Array.BYTES_PER_ELEMENT +
+      numBarycentrics[0]*Uint32Array.BYTES_PER_ELEMENT
+    );
+    let index = 0;
+
+    const outP = new Float32Array(arrayBuffer2, index, numPositions[0]);
+    outP.set(new Float32Array(positions.buffer, positions.byteOffset, numPositions[0]));
+    index += Float32Array.BYTES_PER_ELEMENT * numPositions[0];
+
+    const outB = new Float32Array(arrayBuffer2, index, numBarycentrics[0]);
+    outB.set(new Float32Array(barycentrics.buffer, barycentrics.byteOffset, numBarycentrics[0]));
+    index += Float32Array.BYTES_PER_ELEMENT * numBarycentrics[0];
+
+    self.postMessage({
+      result: {
+        positions: outP,
+        barycentrics: outB,
+        arrayBuffer,
+      },
+    }, [arrayBuffer, arrayBuffer2]);
+    allocator.freeAll();
+  }
+  async handleMessage(data) {
     const {method} = data;
     switch (method) {
-      case 'marchPotentials': {
+      case 'addMesh': {
         const allocator = new Allocator();
 
-        const {depthTextures: depthTexturesData, dims: dimsData, shift: shiftData, size: sizeData, pixelRatio, value, nvalue, arrayBuffer} = data;
+        const {url, position: [x, y, z]} = data;
 
-        const depthTextures = allocator.alloc(Float32Array, depthTexturesData.length);
-        depthTextures.set(depthTexturesData);
+        if (/\.obj$/.test(url)) {
+          const p = makePromise();
+          new MTLLoader(manager)
+            .load(url.replace('.obj', '.mtl'), materials => {
+              materials.preload();
+              p.accept(materials);
+            });
+          let materials = await p;
+          materials = Object.keys(materials.materials).map(k => materials.materials[k]);
+          
+          const p2 = makePromise();
+          const loader = new OBJLoader2(manager);
+          loader.parser.setMaterials( materials );
+          loader.load(url, p2.accept, function onProgress() {}, p2.reject);
 
-        const positions = allocator.alloc(Float32Array, 1024*1024*Float32Array.BYTES_PER_ELEMENT);
-        const barycentrics = allocator.alloc(Float32Array, 1024*1024*Float32Array.BYTES_PER_ELEMENT);
+          const o = await p2;
+          o.traverse(o => {
+            if (o.isMesh) {
+              o.geometry
+                .applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI)))
+                // .applyMatrix4(new THREE.Matrix4().makeTranslation(-rowSize/2 + x, 0, z));
+              // o.material = materials;
+            }
+          });
+          this.pushMesh(o);
+        } else if (/\.vrm$/.test(url)) {
+          const p = makePromise();
+          new GLTFLoader(manager).load(url, p.accept, function onProgress() {}, p.reject);
+          const o = await p;
+          this.pushMesh(o);
+        } else {
+          throw new Error(`unknown model type: ${url}`);
+        }
 
-        const numPositions = allocator.alloc(Uint32Array, 1);
-        numPositions[0] = positions.length;
-        const numBarycentrics = allocator.alloc(Uint32Array, 1);
-        numBarycentrics[0] = barycentrics.length;
-
-        const dims = allocator.alloc(Int32Array, 3);
-        dims.set(Int32Array.from(dimsData));
-
-        const shift = allocator.alloc(Float32Array, 3);
-        shift.set(Float32Array.from(shiftData));
-
-        const size = allocator.alloc(Float32Array, 3);
-        size.set(Float32Array.from(sizeData));
-
-        self.Module._doMarchPotentials(
-          depthTextures.offset,
-          dims.offset,
-          shift.offset,
-          size.offset,
-          pixelRatio,
-          value,
-          nvalue,
-          positions.offset,
-          barycentrics.offset,
-          numPositions.offset,
-          numBarycentrics.offset
-        );
-
-        // console.log('out num positions', numPositions[0], numBarycentrics[0]);
-
-        const arrayBuffer2 = new ArrayBuffer(
-          Uint32Array.BYTES_PER_ELEMENT +
-          numPositions[0]*Float32Array.BYTES_PER_ELEMENT +
-          Uint32Array.BYTES_PER_ELEMENT +
-          numBarycentrics[0]*Uint32Array.BYTES_PER_ELEMENT
-        );
-        let index = 0;
-
-        const outP = new Float32Array(arrayBuffer2, index, numPositions[0]);
-        outP.set(new Float32Array(positions.buffer, positions.byteOffset, numPositions[0]));
-        index += Float32Array.BYTES_PER_ELEMENT * numPositions[0];
-
-        const outB = new Float32Array(arrayBuffer2, index, numBarycentrics[0]);
-        outB.set(new Float32Array(barycentrics.buffer, barycentrics.byteOffset, numBarycentrics[0]));
-        index += Float32Array.BYTES_PER_ELEMENT * numBarycentrics[0];
-
-        self.postMessage({
-          result: {
-            positions: outP,
-            barycentrics: outB,
-            arrayBuffer,
-          },
-        }, [arrayBuffer, arrayBuffer2]);
-        allocator.freeAll();
         break;
       }
       default: {
@@ -570,7 +648,7 @@ class MesherServer {
 }
 
 export {
+  makePromise,
   Mesher,
   MesherServer,
-  makeGlobalMaterial,
 };

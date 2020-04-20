@@ -1,5 +1,11 @@
 import {MesherServer} from './mesher.js';
 
+const _flushMessages = () => {
+  for (let i = 0; i < queue.length; i++) {
+    server.handleMessage(queue[i]);
+  }
+};
+
 const queue = [];
 let loaded = false;
 self.wasmModule = (moduleName, moduleFn) => {
@@ -36,11 +42,6 @@ import('./bin/mc.js')
 
 const server = new MesherServer();
 
-const _flushMessages = () => {
-  for (let i = 0; i < queue.length; i++) {
-    server.handleMessage(queue[i]);
-  }
-};
 self.onmessage = e => {
   const {data} = e;
   if (!loaded) {

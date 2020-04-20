@@ -36,20 +36,10 @@ import {OBJLoader2} from './OBJLoader2.js';
 import {MTLLoader} from './MTLLoader.js';
 import {GLTFExporter} from './GLTFExporter.js';
 import {BufferGeometryUtils} from './BufferGeometryUtils.js';
-import {Mesher} from './mesher.js';
+import {makePromise, Mesher} from './mesher.js';
 import modelFiles from './model-files.js';
 import BezierEasing from './cubic-bezier.js';
 
-function makePromise() {
-  let accept, reject;
-  const p = new Promise((a, r) => {
-    accept = a;
-    reject = r;
-  });
-  p.accept = accept;
-  p.reject = reject;
-  return p;
-}
 const easing = BezierEasing(0, 1, 0, 1);
 
 const canvas = document.getElementById('canvas');
@@ -455,11 +445,11 @@ const _loadParcelMeshes = p => {
   });
 };
 
-const mesher = new Mesher(renderer);
+const mesher = new Mesher();
 // container.add(mesher.currentMesh);
 let meshes = [];
 (async () => {
-  const manager = new THREE.LoadingManager();
+  // const manager = new THREE.LoadingManager();
 
   const _getMeshUrl = (x, z) => `/d/chunk:${x}:${z}.bin`;
   /* const _serializeRawMesh = async mesh => {
@@ -658,57 +648,24 @@ let meshes = [];
     return result;
   })(); */
 
-  const voxelWidth = 15;
-  const voxelSize = 1;
-  const pixelRatio = 3;
-  mesher.initVoxelize(voxelWidth, voxelSize, pixelRatio);
-
   (async () => {
     const objs = modelFiles.filter(m => /\.obj/.test(m));
     const rowSize = 10;
-    const numItems = 10;
+    const numItems = 1;
     for (let i = 0; i < numItems; i++) {
-      // console.log(i);
       const u = `models/${objs[i]}`;
-
-      const p = makePromise();
-      new MTLLoader(manager)
-        .load(u.replace('.obj', '.mtl'), materials => {
-          materials.preload();
-          p.accept(materials);
-        });
-      let materials = await p;
-      materials = Object.keys(materials.materials).map(k => materials.materials[k]);
-      
-      const p2 = makePromise();
-      const loader = new OBJLoader2(manager);
-      loader.parser.setMaterials( materials );
-      loader.load(u, p2.accept, function onProgress() {}, p2.reject);
-
       const x = i%rowSize;
       const z = -Math.floor(i/rowSize);
-
-      const o = await p2;
-      o.traverse(o => {
-        if (o.isMesh) {
-          o.geometry
-            .applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI)))
-            .applyMatrix4(new THREE.Matrix4().makeTranslation(-rowSize/2 + x, 0, z));
-          o.material = materials;
-          // mesher.addMesh(o);
-        }
-      });
-      mesher.addMesh(o);
+      await mesher.addMesh(u, new THREE.Vector3(x, 0, z));
     }
   })();
 
-  {
+  /* {
     const p = makePromise();
     new GLTFLoader(manager).load('models/mountain.glb', p.accept, function onProgress() {}, p.reject);
     const o = await p;
-    o.scene.position.z = -30;
-    mesher.addMesh(o.scene);
-  }
+    mesher.addMesh(o.scene, new THREE.Vector3(0, 0, -30));
+  } */
 
   /* {
     const p = makePromise();
@@ -718,7 +675,7 @@ let meshes = [];
     container.add(mesh);
   } */
 
-  {
+  /* {
     const p = makePromise();
     new GLTFLoader(manager).load('models/model.vrm', p.accept, function onProgress() {}, p.reject);
     const o = await p;
@@ -731,7 +688,7 @@ let meshes = [];
     }, 1 * 1000);
     // debugger;
     // mesher.addMesh(o.scene);
-  }
+  } */
 
   /* {
     const p = makePromise();
