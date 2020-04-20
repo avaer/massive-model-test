@@ -259,7 +259,7 @@ OBJLoader2.prototype = Object.assign( Object.create( Loader.prototype ), {
 			onError( 'An invalid url was provided. Unable to continue!' );
 
 		}
-		let urlFull = new URL( url, window.location.href ).href;
+		let urlFull = new URL( url, globalThis.location.href ).href;
 		let filename = urlFull;
 		let urlParts = urlFull.split( '/' );
 		if ( urlParts.length > 2 ) {
