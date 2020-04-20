@@ -92,7 +92,7 @@ const depthMaterial = (() => {
   });
 })();
 const raycasterCamera = new THREE.PerspectiveCamera();
-const onDepthRender = ({target, near, far, width, height, pixelRatio, matrixWorld, projectionMatrix}) => {
+const onDepthRender = ({target, near, far, pixelRatio, matrixWorld, projectionMatrix}) => {
   raycasterCamera.near = near;
   raycasterCamera.far = far;
   raycasterCamera.matrixWorld.fromArray(matrixWorld).decompose(raycasterCamera.position, raycasterCamera.quaternion, raycasterCamera.scale);

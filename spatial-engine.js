@@ -37,6 +37,8 @@ export class XRRaycaster {
     );
     // this.camera = camera;
 
+    let far = voxelSize;
+
     const depthTarget = {};
     const depthTargets = (() => {
       const result = Array(6);
@@ -76,6 +78,8 @@ export class XRRaycaster {
       camera.near = 0.001;
       camera.far = dSize;
       camera.updateProjectionMatrix();
+
+      far = dSize;
     };
     depthTarget.updateView = (x, y, z, q) => {
       // console.log('update view', x, y, z);
@@ -94,9 +98,7 @@ export class XRRaycaster {
       onDepthRender({
         target: depthTargets[i],
         near: 0.001,
-        far: voxelSize,
-        width,
-        height,
+        far,
         pixelRatio,
         matrixWorld: camera.matrixWorld.toArray(),
         projectionMatrix: camera.projectionMatrix.toArray(),
