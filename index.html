@@ -404,11 +404,12 @@ const _makeParcelMesh = (extents, color, key) => {
 
   const chunk = mesher.getChunk(mesh.aabb);
   chunk.addEventListener('previewMesh', e => {
-    const m = e.data;
-    mesh.add(m);
+    const {previewMesh: pm} = e.data;
+    mesh.add(pm);
   });
   chunk.addEventListener('mesh', e => {
-    const m = e.data;
+    const {mesh: m, previewMesh: pm} = e.data;
+    mesh.remove(pm);
     mesh.add(m);
   });
   mesh.destroy = () => {

@@ -839,12 +839,25 @@ class Mesher {
     const chunk = new EventTarget();
     (async () => {
       const meshes = this.getMeshesInAabb(aabb);
-      // console.log('got meshes', meshes.length, aabb.min.toArray(), aabb.max.toArray());
+      const previewMeshes = [];
       for (let i = 0; i < meshes.length; i++) {
         const mesh = meshes[i];
         const previewMesh = await this.voxelize(mesh);
+        previewMeshes.push(previewMesh);
         chunk.dispatchEvent(new MessageEvent('previewMesh', {
-          data: previewMesh,
+          data: {
+            previewMesh,
+          },
+        }));
+      }
+      for (let i = 0; i < meshes.length; i++) {
+        const mesh = meshes[i];
+        const previewMesh = previewMeshes[i];
+        chunk.dispatchEvent(new MessageEvent('mesh', {
+          data: {
+            mesh,
+            previewMesh,
+          }
         }));
       }
     })();
@@ -852,7 +865,9 @@ class Mesher {
       if (mesh.aabb.intersectsBox(aabb)) {
         const previewMesh = await this.voxelize(mesh);
         chunk.dispatchEvent(new MessageEvent('previewMesh', {
-          data: previewMesh,
+          data: {
+            previewMesh,
+          },
         }));
       }
     };
