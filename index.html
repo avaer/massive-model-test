@@ -309,12 +309,12 @@ const floorGeometry = new THREE.PlaneBufferGeometry(1, 1)
   .applyMatrix4(new THREE.Matrix4().makeScale(0.99, 0.99, 1))
   .applyMatrix4(new THREE.Matrix4().makeTranslation(0.5, -0.5, 0.01))
   .applyMatrix4(new THREE.Matrix4().makeRotationAxis(new THREE.Vector3(1, 0, 0), -Math.PI/2));
-const _makeParcelMesh = (extents, color) => {
+const _makeParcelMesh = (extents, color, key) => {
+  const [[ax1, ay1, ax2, ay2]] = extents;
+  const w = ax2 - ax1;
+  const h = ay2 - ay1;
   const geometry = (() => {
     const geometries = [];
-    const [[ax1, ay1, ax2, ay2]] = extents;
-    const w = ax2 - ax1;
-    const h = ay2 - ay1;
     geometries.push(
       floorGeometry.clone()
         // .applyMatrix4(new THREE.Matrix4().makeTranslation(0, 0, 1))
@@ -391,6 +391,11 @@ const _makeParcelMesh = (extents, color) => {
     transparent: true,
   });
   const mesh = new THREE.Mesh(geometry, material);
+  mesh.aabb = new THREE.Box3(
+    new THREE.Vector3(ax1, 0, ay1),
+    new THREE.Vector3(ax2, 128, ay2)
+  );
+  mesh.key = key;
   mesh.startTime = Date.now();
   mesh.frustumCulled = false;
   mesh.setColor = c => {
@@ -399,8 +404,9 @@ const _makeParcelMesh = (extents, color) => {
   return mesh;
 };
 const parcels = {};
-const parcelMeshes = [];
+let parcelMeshes = [];
 const _loadParcelMeshes = p => {
+  const currentParcels = {};
   let cx = Math.floor(p.x/8);
   let cz = Math.floor(p.z/8);
   for (let dx = -1; dx <= 1; dx++) {
@@ -409,13 +415,24 @@ const _loadParcelMeshes = p => {
       const az = cz+dz;
       const k = ax + ':' + az;
       if (!parcels[k]) {
-        const parcelMesh = _makeParcelMesh([[ax*8, az*8, ax*8+8, az*8+8]], 0x66bb6a);
+        const parcelMesh = _makeParcelMesh([[ax*8, az*8, ax*8+8, az*8+8]], 0x66bb6a, k);
         container.add(parcelMesh);
         parcelMeshes.push(parcelMesh);
         parcels[k] = true;
       }
+      currentParcels[k] = true;
     }
   }
+  parcelMeshes = parcelMeshes.filter(parcelMesh => {
+    const {key} = parcelMesh;
+    if (currentParcels[key]) {
+      return true;
+    } else {
+      container.remove(parcelMesh);
+      parcels[key] = false;
+      return false;
+    }
+  });
 };
 
 const mesher = new Mesher(renderer);
@@ -540,7 +557,7 @@ let meshes = [];
     const rowSize = 10;
     const numItems = 10;
     for (let i = 0; i < numItems; i++) {
-      console.log(i);
+      // console.log(i);
       const u = `models/${objs[i]}`;
 
       const p = makePromise();
@@ -576,18 +593,21 @@ let meshes = [];
     }
   })();
 
-  /* {
+  {
     const p = makePromise();
     new GLTFLoader(manager).load('models/mountain.glb', p.accept, function onProgress() {}, p.reject);
     const o = await p;
-    mesher.addMesh(o.scene);
+    o.scene.position.z = -30;
+    const mesh = await mesher.voxelize(o.scene);
+    container.add(mesh);
   }
 
-  {
+  /* {
     const p = makePromise();
     new GLTFLoader(manager).load('models/building.glb', p.accept, function onProgress() {}, p.reject);
     const o = await p;
-    mesher.addMesh(o.scene);
+    const mesh = await mesher.voxelize(o.scene);
+    container.add(mesh);
   } */
 
   {
@@ -596,7 +616,6 @@ let meshes = [];
     const o = await p;
     const mesh = await mesher.voxelize(o.scene);
     container.add(mesh);
-    // mesher.addMesh(o.scene);
   }
 
   /* {
