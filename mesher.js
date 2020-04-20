@@ -869,6 +869,12 @@ class Mesher {
             previewMesh,
           },
         }));
+        chunk.dispatchEvent(new MessageEvent('mesh', {
+          data: {
+            mesh,
+            previewMesh,
+          }
+        }));
       }
     };
     chunk.destroy = () => {
