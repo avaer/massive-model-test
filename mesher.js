@@ -325,7 +325,7 @@ class Mesher {
       position: position.toArray(),
     });
   }
-  async registerChunk(aabb) {
+  async registerChunk() {
     await this.worker.request({
       method: 'registerChunk',
       aabb: {
@@ -639,12 +639,73 @@ class MesherServer {
 
         break;
       }
+      case 'registerChunk': {
+        const {
+          aabb: {
+            min,
+            max,
+          },
+        } = data;
+        const aabb = new THREE.Box3(
+          new THREE.Vector3().fromArray(min),
+          new THREE.Vector3().fromArray(max),
+        );
+        const chunk = new ChunkServer(aabb);
+        this.chunks.add(chunk);
+
+        for (let i = 0; i < this.meshes.length; i++) {
+          const mesh = this.meshes[i];
+          chunk.notifyMesh(mesh);
+        }
+        break;
+      }
+      case 'unregisterChunk': {
+        const {
+          aabb: {
+            min,
+            max,
+          },
+        } = data;
+        const aabb = new THREE.Box3(
+          new THREE.Vector3().fromArray(min),
+          new THREE.Vector3().fromArray(max),
+        );
+        const index = this.chunks.findIndex(c => c.aabb.min.equals(min) && c.aabb.max.equals(max));
+        if (index !== -1) {
+          this.chunks.splice(index, 1);
+        }
+        break;
+      }
       default: {
         console.warn('unknown method', data.method);
         break;
       }
     }
   };
+}
+
+class ChunkServer {
+  constructor(aabb, mesherServer) {
+    this.aabb = aabb;
+    this.mesherServer = mesherServer;
+  }
+  async notifyMesh(mesh) {
+    if (mesh.aabb.intersectsBox(this.aabb)) {
+      const previewMesh = await this.voxelize(mesh);
+      // XXX dispatch to client via this.mesherServer
+      chunk.dispatchEvent(new MessageEvent('previewMesh', {
+        data: {
+          previewMesh,
+        },
+      }));
+      chunk.dispatchEvent(new MessageEvent('mesh', {
+        data: {
+          mesh,
+          previewMesh,
+        }
+      }));
+    }
+  }
 }
 
 export {
