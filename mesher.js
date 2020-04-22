@@ -832,14 +832,17 @@ class ChunkServer {
     this.aabb = aabb;
     this.mesherServer = mesherServer;
     this.meshes = [];
+    this.live = true;
   }
   async notifyMesh(mesh) {
     if (mesh.aabb.intersectsBox(this.aabb)) {
+      this.meshes.push(mesh);
       mesh.chunks.push(this);
 
       if (mesh.chunks.length === 1) {
         {
           const {result, cleanup} = await this.mesherServer.voxelize(mesh);
+          if (!this.live) return;
           const {positions, barycentrics} = result;
 
           const arrayBuffer2 = new ArrayBuffer(
@@ -879,6 +882,7 @@ class ChunkServer {
         }
         {
           const arrayBuffer = await _serializeMesh(mesh);
+          if (!this.live) return;
 
           this.mesherServer.postMessage({
             type: 'mesh',
@@ -894,7 +898,6 @@ class ChunkServer {
         }
       }
     }
-    this.meshes.push(mesh);
   }
   destroy() {
     for (let i = 0; i < this.meshes.length; i++){
@@ -913,6 +916,7 @@ class ChunkServer {
       }
     }
     this.meshes.length = 0;
+    this.live = false;
   }
 }
 
