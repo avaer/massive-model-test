@@ -445,9 +445,17 @@ const _loadParcelMeshes = p => {
   });
 };
 
-const mesher = new Mesher();
-// container.add(mesher.currentMesh);
+const mesher = new Mesher(renderer, scene, camera);
 let meshes = [];
+mesher.addEventListener('previewMesh', e => {
+  const {previewMesh} = e.data;
+  container.add(previewMesh);
+});
+mesher.addEventListener('mesh', e => {
+  const {mesh, previewMesh} = e.data;
+  container.remove(previewMesh);
+  container.add(mesh);
+});
 (async () => {
   // const manager = new THREE.LoadingManager();
 
@@ -543,97 +551,6 @@ let meshes = [];
     mesh.frustumCulled = false;
     return mesh;
   }; */
-
-  const _serializeMesh = async o => {
-    const p = makePromise();
-    new GLTFExporter().parse(o, gltf => {
-      p.accept(gltf);
-    }, {
-      binary: true,
-      // includeCustomExtensions: true,
-    });
-    const b = await p;
-    return new Blob([b], {
-      type: 'application/octet-stream',
-    });
-  };
-  const _deserializeMesh = async (b, context) => {
-    const u = URL.createObjectURL(b);
-    const p = makePromise();
-    new GLTFLoader().load(u, p.accept, function onProgress() {}, p.reject);
-    try {
-      let o = await p;
-      o = o.scene;
-      o.traverse(o => {
-        if (o.isMesh) {
-          o.frustumCulled = false;
-        }
-      });
-
-      const {attributes, textures} = renderer;
-      const materialObjects = [];
-      o.traverse(o => {
-        if (o.isMesh) {
-          {
-            const {geometry} = o;
-
-            var index = geometry.index;
-            var geometryAttributes = geometry.attributes;
-
-            if ( index !== null ) {
-
-              attributes.update( index, 34963 );
-
-            }
-
-            for ( var name in geometryAttributes ) {
-
-              attributes.update( geometryAttributes[ name ], 34962 );
-
-            }
-
-            // morph targets
-
-            var morphAttributes = geometry.morphAttributes;
-
-            for ( var name in morphAttributes ) {
-
-              var array = morphAttributes[ name ];
-
-              for ( var i = 0, l = array.length; i < l; i ++ ) {
-
-                attributes.update( array[ i ], 34962 );
-
-              }
-
-            }
-          }
-          {
-            const {material} = o;
-
-            const ks = Object.getOwnPropertyNames(material);
-            ks.forEach(k => {
-              const v = material[k];
-              if (v && v.isTexture) {
-                textures.setTexture2D(v, 0);
-              }
-            });
-
-            materialObjects.push(o);
-          }
-        }
-      });
-      renderer.setCurrentRenderState(scene, camera);
-      for (let i = 0; i < materialObjects.length; i++) {
-        const o = materialObjects[i];
-        renderer.setProgram(camera, scene, o.material, o);
-      }
-
-      return o;
-    } finally {
-      URL.revokeObjectURL(u);
-    }
-  };
 
   /* meshes = await (async () => {
     const result = [];

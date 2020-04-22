@@ -30,6 +30,98 @@ function makePromise() {
   p.reject = reject;
   return p;
 }
+const _serializeMesh = o => {
+  const p = makePromise();
+  new GLTFExporter().parse(o, gltf => {
+    p.accept(gltf);
+  }, {
+    binary: true,
+    // includeCustomExtensions: true,
+  });
+  return p;
+};
+const _deserializeMesh = async (b, renderer, scene, camera) => {
+  const blob = new Blob([b], {
+    type: 'application/octet-stream',
+  });
+  const u = URL.createObjectURL(blob);
+  await fetch(u).then(res => res.arrayBuffer()).then(console.log);
+
+  const p = makePromise();
+  new GLTFLoader().load(u, p.accept, function onProgress() {}, p.reject);
+  try {
+    let o = await p;
+    o = o.scene;
+    o.traverse(o => {
+      if (o.isMesh) {
+        o.frustumCulled = false;
+      }
+    });
+
+    const {attributes, textures} = renderer;
+    const materialObjects = [];
+    o.traverse(o => {
+      if (o.isMesh) {
+        {
+          const {geometry} = o;
+
+          var index = geometry.index;
+          var geometryAttributes = geometry.attributes;
+
+          if ( index !== null ) {
+
+            attributes.update( index, 34963 );
+
+          }
+
+          for ( var name in geometryAttributes ) {
+
+            attributes.update( geometryAttributes[ name ], 34962 );
+
+          }
+
+          // morph targets
+
+          var morphAttributes = geometry.morphAttributes;
+
+          for ( var name in morphAttributes ) {
+
+            var array = morphAttributes[ name ];
+
+            for ( var i = 0, l = array.length; i < l; i ++ ) {
+
+              attributes.update( array[ i ], 34962 );
+
+            }
+
+          }
+        }
+        {
+          const {material} = o;
+
+          const ks = Object.getOwnPropertyNames(material);
+          ks.forEach(k => {
+            const v = material[k];
+            if (v && v.isTexture) {
+              textures.setTexture2D(v, 0);
+            }
+          });
+
+          materialObjects.push(o);
+        }
+      }
+    });
+    renderer.setCurrentRenderState(scene, camera);
+    for (let i = 0; i < materialObjects.length; i++) {
+      const o = materialObjects[i];
+      renderer.setProgram(camera, scene, o.material, o);
+    }
+
+    return o;
+  } finally {
+    URL.revokeObjectURL(u);
+  }
+};
 
 const manager = new THREE.LoadingManager();
 
@@ -82,40 +174,6 @@ const depthMaterial = (() => {
     side: THREE.DoubleSide,
   });
 })();
-const raycasterCamera = new THREE.PerspectiveCamera();
-const onDepthRender = ({target, near, far, pixelRatio, matrixWorld, projectionMatrix}) => {
-  raycasterCamera.near = near;
-  raycasterCamera.far = far;
-  raycasterCamera.matrixWorld.fromArray(matrixWorld).decompose(raycasterCamera.position, raycasterCamera.quaternion, raycasterCamera.scale);
-  raycasterCamera.projectionMatrix.fromArray(projectionMatrix);
-  depthMaterial.uniforms.uNear.value = near;
-  depthMaterial.uniforms.uFar.value = far;
-
-  // console.log('render', target, near, far, matrixWorld, projectionMatrix);
-
-  {
-    // const unhideUiMeshes = _hideUiMeshes();
-
-    scene.overrideMaterial = depthMaterial;
-    // const oldVrEnabled = renderer.vr.enabled;
-    // renderer.vr.enabled = false;
-    // const oldClearColor = localColor.copy(renderer.getClearColor());
-    // const oldClearAlpha = renderer.getClearAlpha();
-    renderer.setRenderTarget(target);
-
-    renderer.setClearColor(new THREE.Color(0, 0, 0), 1);
-    // renderer.setViewport(0, 0, width*pixelRatio, height*pixelRatio);
-    renderer.render(scene, raycasterCamera);
-
-    scene.overrideMaterial = null;
-    // renderer.vr.enabled = oldVrEnabled;
-    // renderer.setClearColor(oldClearColor, oldClearAlpha);
-
-    // unhideUiMeshes();
-
-    renderer.setRenderTarget(null);
-  }
-};
 
 const makeGlobalMaterial = () => new THREE.ShaderMaterial({
   uniforms: {},
@@ -265,26 +323,65 @@ class Allocator {
   }
 }
 
-class Mesher {
-  constructor() {
+class Mesher extends EventTarget {
+  constructor(renderer, scene, camera) {
+    super();
+
+    this.renderer = renderer;
+    this.scene = scene;
+    this.camera = camera;
+
+    this.previewMaterial = makeGlobalMaterial();
     this.worker = (() => {
       let cbs = [];
       const w = new Worker('mc-worker.js', {
         type: 'module',
       });
-      w.onmessage = e => {
+      w.onmessage = async e => {
         const {data} = e;
-        const {error, result, type} = data;
+        const {error, result, type, payload} = data;
         if (error || result) {
           cbs.shift()(error, result);
         } else if (type) {
           switch (type) {
             case 'previewMesh': {
-              console.log('got preview mesh', data);
+              const {positions, barycentrics, meshId, aabb: {min, max}} = payload;
+              const geometry = new THREE.BufferGeometry();
+              geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+              geometry.setAttribute('barycentric', new THREE.BufferAttribute(barycentrics, 3));
+              const previewMesh = new THREE.Mesh(geometry, this.previewMaterial);
+              previewMesh.boundingSphere = new THREE.Box3(
+                new THREE.Vector3().fromArray(min),
+                new THREE.Vector3().fromArray(max),
+              );
+              previewMesh.meshId = meshId;
+              this.previewMeshes.push(previewMesh);
+
+              this.dispatchEvent(new MessageEvent('previewMesh', {
+                data: {
+                  previewMesh,
+                },
+              }));
               break;
             }
             case 'mesh': {
-              console.log('got mesh', data);
+              const {arrayBuffer, meshId, aabb: {min, max}} = payload;
+              const mesh = await _deserializeMesh(arrayBuffer, this.renderer, this.scene, this.camera);
+              mesh.traverse(o => {
+                if (o.isMesh) {
+                  o.frustumCulled = false;
+                }
+              });
+              mesh.meshId = meshId;
+              this.meshes.push(mesh);
+
+              const previewMesh = this.previewMeshes.find(previewMesh => previewMesh.meshId === mesh.meshId);
+              this.dispatchEvent(new MessageEvent('mesh', {
+                data: {
+                  mesh,
+                  previewMesh,
+                },
+              }));
               break;
             }
             default: {
@@ -313,10 +410,10 @@ class Mesher {
       return w;
     })();
 
-    // this.globalMaterial = null
-    // this.arrayBuffer = null;
-    // this.arrayBuffers = [];
+    this.previewMeshes = [];
+    this.meshes = [];
     this.chunks = [];
+
   }
   async addMesh(url, position) {
     await this.worker.request({
@@ -325,7 +422,7 @@ class Mesher {
       position: position.toArray(),
     });
   }
-  async registerChunk() {
+  async registerChunk(aabb) {
     await this.worker.request({
       method: 'registerChunk',
       aabb: {
@@ -421,6 +518,40 @@ class MesherServer {
 
     this.scene = scene;
 
+    const raycasterCamera = new THREE.PerspectiveCamera();
+    const onDepthRender = ({target, near, far, pixelRatio, matrixWorld, projectionMatrix}) => {
+      raycasterCamera.near = near;
+      raycasterCamera.far = far;
+      raycasterCamera.matrixWorld.fromArray(matrixWorld).decompose(raycasterCamera.position, raycasterCamera.quaternion, raycasterCamera.scale);
+      raycasterCamera.projectionMatrix.fromArray(projectionMatrix);
+      depthMaterial.uniforms.uNear.value = near;
+      depthMaterial.uniforms.uFar.value = far;
+
+      // console.log('render', target, near, far, matrixWorld, projectionMatrix);
+
+      {
+        // const unhideUiMeshes = _hideUiMeshes();
+
+        this.scene.overrideMaterial = depthMaterial;
+        // const oldVrEnabled = renderer.vr.enabled;
+        // renderer.vr.enabled = false;
+        // const oldClearColor = localColor.copy(renderer.getClearColor());
+        // const oldClearAlpha = renderer.getClearAlpha();
+        renderer.setRenderTarget(target);
+
+        renderer.setClearColor(new THREE.Color(0, 0, 0), 1);
+        // renderer.setViewport(0, 0, width*pixelRatio, height*pixelRatio);
+        renderer.render(scene, raycasterCamera);
+
+        scene.overrideMaterial = null;
+        // renderer.vr.enabled = oldVrEnabled;
+        // renderer.setClearColor(oldClearColor, oldClearAlpha);
+
+        // unhideUiMeshes();
+
+        renderer.setRenderTarget(null);
+      }
+    };
     this.xrRaycaster = new XRRaycaster({
       width: voxelWidth,
       height: voxelWidth,
@@ -429,6 +560,8 @@ class MesherServer {
       renderer,
       onDepthRender,
     });
+
+    this.ids = 0;
     this.meshes = [];
     this.chunks = [];
   }
@@ -451,7 +584,10 @@ class MesherServer {
     }
   } */
   pushMesh(o) {
+    o.updateMatrixWorld();
+    o.meshId = ++this.ids;
     o.aabb = new THREE.Box3().setFromObject(o);
+    o.chunks = [];
     this.meshes.push(o);
     for (let i = 0; i < this.chunks.length; i++) {
       this.chunks[i].notifyMesh(o);
@@ -493,12 +629,12 @@ class MesherServer {
       } else {
         localQuaternion.set(0, 0, 0, 1);
       }
-      xrRaycaster.updateView(x, y, z, localQuaternion);
-      xrRaycaster.updateSize(_multiplyLength(size, sx), _multiplyLength(size, sy), _multiplyLength(size, sz));
-      xrRaycaster.renderDepthTexture(i);
+      this.xrRaycaster.updateView(x, y, z, localQuaternion);
+      this.xrRaycaster.updateSize(_multiplyLength(size, sx), _multiplyLength(size, sy), _multiplyLength(size, sz));
+      this.xrRaycaster.renderDepthTexture(i);
     });
     for (let i = 0; i < 6; i++) {
-      xrRaycaster.getDepthBufferPixels(i, depthTextures, voxelWidth * pixelRatio * voxelWidth * pixelRatio * 4 * i);
+      this.xrRaycaster.getDepthBufferPixels(i, depthTextures, voxelWidth * pixelRatio * voxelWidth * pixelRatio * 4 * i);
     }
 
     this.scene.remove(m);
@@ -519,18 +655,16 @@ class MesherServer {
       // arrayBuffer,
     });
     // console.log('got res', res);
-    // this.arrayBuffers.push(res.arrayBuffer);
+    return res;
 
-    // console.log('march potentials 2', res);
-
-    const mesh = new THREE.Mesh(new THREE.BufferGeometry(), this.globalMaterial);
+    /* const mesh = new THREE.Mesh(new THREE.BufferGeometry(), this.globalMaterial);
     mesh.geometry.setAttribute('position', new THREE.BufferAttribute(res.positions, 3));
     mesh.geometry.setAttribute('barycentric', new THREE.BufferAttribute(res.barycentrics, 3));
 
-    return mesh;
+    return mesh; */
   }
   async marchPotentials(data) {
-    const {depthTextures: depthTexturesData, dims: dimsData, shift: shiftData, size: sizeData, pixelRatio, value, nvalue, arrayBuffer} = data;
+    const {depthTextures: depthTexturesData, dims: dimsData, shift: shiftData, size: sizeData, pixelRatio, value, nvalue} = data;
 
     const allocator = new Allocator();
 
@@ -586,14 +720,18 @@ class MesherServer {
     outB.set(new Float32Array(barycentrics.buffer, barycentrics.byteOffset, numBarycentrics[0]));
     index += Float32Array.BYTES_PER_ELEMENT * numBarycentrics[0];
 
-    self.postMessage({
+    return {
       result: {
         positions: outP,
         barycentrics: outB,
-        arrayBuffer,
       },
-    }, [arrayBuffer, arrayBuffer2]);
-    allocator.freeAll();
+      cleanup: () => {
+        allocator.freeAll();
+      },
+    };
+  }
+  postMessage(m, txs) {
+    self.postMessage(m, txs)
   }
   async handleMessage(data) {
     const {method} = data;
@@ -601,7 +739,7 @@ class MesherServer {
       case 'addMesh': {
         const allocator = new Allocator();
 
-        const {url, position: [x, y, z]} = data;
+        const {url, position} = data;
 
         if (/\.obj$/.test(url)) {
           const p = makePromise();
@@ -627,11 +765,13 @@ class MesherServer {
               // o.material = materials;
             }
           });
+          o.position.fromArray(position);
           this.pushMesh(o);
         } else if (/\.vrm$/.test(url)) {
           const p = makePromise();
           new GLTFLoader(manager).load(url, p.accept, function onProgress() {}, p.reject);
           const o = await p;
+          o.position.fromArray(position);
           this.pushMesh(o);
         } else {
           throw new Error(`unknown model type: ${url}`);
@@ -650,8 +790,8 @@ class MesherServer {
           new THREE.Vector3().fromArray(min),
           new THREE.Vector3().fromArray(max),
         );
-        const chunk = new ChunkServer(aabb);
-        this.chunks.add(chunk);
+        const chunk = new ChunkServer(aabb, this);
+        this.chunks.push(chunk);
 
         for (let i = 0; i < this.meshes.length; i++) {
           const mesh = this.meshes[i];
@@ -672,7 +812,8 @@ class MesherServer {
         );
         const index = this.chunks.findIndex(c => c.aabb.min.equals(min) && c.aabb.max.equals(max));
         if (index !== -1) {
-          this.chunks.splice(index, 1);
+          const [chunk] = this.chunks.splice(index, 1);
+          chunk.destroy();
         }
         break;
       }
@@ -688,22 +829,77 @@ class ChunkServer {
   constructor(aabb, mesherServer) {
     this.aabb = aabb;
     this.mesherServer = mesherServer;
+    this.meshes = [];
   }
   async notifyMesh(mesh) {
     if (mesh.aabb.intersectsBox(this.aabb)) {
-      const previewMesh = await this.voxelize(mesh);
-      // XXX dispatch to client via this.mesherServer
-      chunk.dispatchEvent(new MessageEvent('previewMesh', {
-        data: {
-          previewMesh,
-        },
-      }));
-      chunk.dispatchEvent(new MessageEvent('mesh', {
-        data: {
-          mesh,
-          previewMesh,
+      mesh.chunks.push(this);
+
+      if (mesh.chunks.length === 1) {
+        {
+          const {result, cleanup} = await this.mesherServer.voxelize(mesh);
+          const {positions, barycentrics} = result;
+          /* const {geometry} = previewMesh;
+          const positions = geometry.attributes.position.array;
+          const barycentrics = geometry.attributes.barycentric.array; */
+
+          const arrayBuffer2 = new ArrayBuffer(
+            Uint32Array.BYTES_PER_ELEMENT +
+            positions.length*Float32Array.BYTES_PER_ELEMENT +
+            Uint32Array.BYTES_PER_ELEMENT +
+            barycentrics.length*Uint32Array.BYTES_PER_ELEMENT
+          );
+          let index = 0;
+
+          new Uint32Array(arrayBuffer2, index, 1)[0] = positions.length;
+          index += Uint32Array.BYTES_PER_ELEMENT;
+          const outP = new Float32Array(arrayBuffer2, index, positions.length);
+          outP.set(new Float32Array(positions.buffer, positions.byteOffset, positions.length));
+          index += Float32Array.BYTES_PER_ELEMENT * positions.length;
+
+          new Uint32Array(arrayBuffer2, index, 1)[0] = barycentrics.length;
+          index += Uint32Array.BYTES_PER_ELEMENT;
+          const outB = new Float32Array(arrayBuffer2, index, barycentrics.length);
+          outB.set(new Float32Array(barycentrics.buffer, barycentrics.byteOffset, barycentrics.length));
+          index += Float32Array.BYTES_PER_ELEMENT * barycentrics.length;
+
+          this.mesherServer.postMessage({
+            type: 'previewMesh',
+            payload: {
+              positions: outP,
+              barycentrics: outB,
+              meshId: mesh.meshId,
+              aabb: {
+                min: mesh.aabb.min.toArray(),
+                max: mesh.aabb.max.toArray(),
+              },
+            },
+          }, [arrayBuffer2]);
+
+          cleanup();
         }
-      }));
+        {
+          const arrayBuffer = await _serializeMesh(mesh);
+
+          this.mesherServer.postMessage({
+            type: 'mesh',
+            payload: {
+              arrayBuffer,
+              meshId: mesh.meshId,
+              aabb: {
+                min: mesh.aabb.min.toArray(),
+                max: mesh.aabb.max.toArray(),
+              },
+            },
+          }, [arrayBuffer]);
+        }
+      }
+    }
+  }
+  destroy() {
+    for (let i = 0; i < this.meshes.length; i++){
+      const mesh = this.meshes[i];
+      mesh.chunks.splice(mesh.chunks.indexOf(this), 1);
     }
   }
 }
