@@ -1821,7 +1821,7 @@ var GLTFLoader = ( function () {
 		var options = this.options;
 		var textureLoader = this.textureLoader;
 
-		var URL = window.URL || window.webkitURL;
+		var URL = globalThis.URL || globalThis.webkitURL;
 
 		var textureDef = json.textures[ textureIndex ];
 
