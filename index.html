@@ -592,20 +592,9 @@ mesher.addEventListener('mesh', e => {
     container.add(mesh);
   } */
 
-  /* {
-    const p = makePromise();
-    new GLTFLoader(manager).load('models/model.vrm', p.accept, function onProgress() {}, p.reject);
-    const o = await p;
-    const b = await _serializeMesh(o.scene);
-    // console.log('got serialized 1', b);
-    const o2 = await _deserializeMesh(b, renderer.getContext());
-    setTimeout(() => {
-      // console.log('add to scene 2');
-      container.add(o2);
-    }, 1 * 1000);
-    // debugger;
-    // mesher.addMesh(o.scene);
-  } */
+  {
+    mesher.addMesh('models/model.vrm');
+  }
 
   /* {
     const p = makePromise();
