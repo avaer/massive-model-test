@@ -413,7 +413,7 @@ class Mesher extends EventTarget {
     this.chunks = [];
 
   }
-  addMesh(url, position) {
+  addMesh(url, position = new THREE.Vector3()) {
     this.worker.request({
       method: 'addMesh',
       url,
