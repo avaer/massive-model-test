@@ -815,7 +815,6 @@ class MesherServer {
         const index = this.chunks.findIndex(c => c.aabb.min.equals(aabb.min) && c.aabb.max.equals(aabb.max));
         if (index !== -1) {
           const [chunk] = this.chunks.splice(index, 1);
-          // console.log('destroy chunk', min.join(','), max.join(','), chunk.meshes.slice());
           chunk.destroy();
         }
         break;
