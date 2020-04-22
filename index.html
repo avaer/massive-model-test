@@ -568,10 +568,10 @@ mesher.addEventListener('mesh', e => {
   (async () => {
     const objs = modelFiles.filter(m => /\.obj/.test(m));
     const rowSize = 10;
-    const numItems = 1;
+    const numItems = 10;
     for (let i = 0; i < numItems; i++) {
       const u = `models/${objs[i]}`;
-      const x = i%rowSize;
+      const x = -rowSize/2 + i%rowSize;
       const z = -Math.floor(i/rowSize);
       await mesher.addMesh(u, new THREE.Vector3(x, 0, z));
     }

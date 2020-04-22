@@ -45,8 +45,6 @@ const _deserializeMesh = async (b, renderer, scene, camera) => {
     type: 'application/octet-stream',
   });
   const u = URL.createObjectURL(blob);
-  await fetch(u).then(res => res.arrayBuffer()).then(console.log);
-
   const p = makePromise();
   new GLTFLoader().load(u, p.accept, function onProgress() {}, p.reject);
   try {
@@ -415,15 +413,15 @@ class Mesher extends EventTarget {
     this.chunks = [];
 
   }
-  async addMesh(url, position) {
-    await this.worker.request({
+  addMesh(url, position) {
+    this.worker.request({
       method: 'addMesh',
       url,
       position: position.toArray(),
     });
   }
-  async registerChunk(aabb) {
-    await this.worker.request({
+  registerChunk(aabb) {
+    this.worker.request({
       method: 'registerChunk',
       aabb: {
         min: aabb.min.toArray(),
@@ -431,8 +429,8 @@ class Mesher extends EventTarget {
       },
     });
   }
-  async unregisterChunk(aabb) {
-    await this.worker.request({
+  unregisterChunk(aabb) {
+    this.worker.request({
       method: 'unregisterChunk',
       aabb: {
         min: aabb.min.toArray(),
