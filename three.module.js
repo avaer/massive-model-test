@@ -36556,12 +36556,12 @@ ImageLoader.prototype = Object.assign( Object.create( Loader.prototype ), {
 
 		}
 
-		var image = document.createElementNS( 'http://www.w3.org/1999/xhtml', 'img' );
+		// var image = document.createElementNS( 'http://www.w3.org/1999/xhtml', 'img' );
 
 		function onImageLoad() {
 
-			image.removeEventListener( 'load', onImageLoad, false );
-			image.removeEventListener( 'error', onImageError, false );
+			/* image.removeEventListener( 'load', onImageLoad, false );
+			image.removeEventListener( 'error', onImageError, false ); */
 
 			Cache.add( url, this );
 
@@ -36573,8 +36573,8 @@ ImageLoader.prototype = Object.assign( Object.create( Loader.prototype ), {
 
 		function onImageError( event ) {
 
-			image.removeEventListener( 'load', onImageLoad, false );
-			image.removeEventListener( 'error', onImageError, false );
+			/* image.removeEventListener( 'load', onImageLoad, false );
+			image.removeEventListener( 'error', onImageError, false ); */
 
 			if ( onError ) onError( event );
 
@@ -36583,20 +36583,25 @@ ImageLoader.prototype = Object.assign( Object.create( Loader.prototype ), {
 
 		}
 
-		image.addEventListener( 'load', onImageLoad, false );
+		/* image.addEventListener( 'load', onImageLoad, false );
 		image.addEventListener( 'error', onImageError, false );
 
 		if ( url.substr( 0, 5 ) !== 'data:' ) {
 
 			if ( this.crossOrigin !== undefined ) image.crossOrigin = this.crossOrigin;
 
-		}
+		} */
 
 		scope.manager.itemStart( url );
 
-		image.src = url;
+		// image.src = url;
+		fetch(url)
+		  .then(res => res.blob())
+		  .then(b => createImageBitmap(b))
+		  .then(ib => onImageLoad.call(ib))
+		  .catch(onImageError);
 
-		return image;
+		// return image;
 
 	}
 
