@@ -61,7 +61,7 @@ renderer.physicallyCorrectLights = true;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000000);
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(0, 0.5, 1.5);
+camera.position.set(0, 1, 1.5);
 camera.rotation.order = 'YXZ';
 renderer.render(scene, camera);
 
@@ -682,12 +682,12 @@ mesher.addEventListener('removeMesh', e => {
     const objs = modelFiles.filter(m => /\.obj/.test(m));
     const rowSize = 10;
     const numItems = 10;
-    // for (let i = 0; i < numItems; i++) {
-      const u = `models/${objs[3]}`;
-      const x = 1; // -rowSize/2 + i%rowSize;
-      const z = 0; // -Math.floor(i/rowSize);
+    for (let i = 0; i < numItems; i++) {
+      const u = `models/${objs[i]}`;
+      const x = -rowSize/2 + i%rowSize;
+      const z = -Math.floor(i/rowSize);
       mesher.addMesh(u, new THREE.Vector3(x, 0, z));
-    // }
+    }
   })();
 
   /* {
@@ -705,9 +705,9 @@ mesher.addEventListener('removeMesh', e => {
     container.add(mesh);
   } */
 
-  /* {
+  {
     mesher.addMesh('models/model.vrm');
-  } */
+  }
 
   /* {
     const p = makePromise();
