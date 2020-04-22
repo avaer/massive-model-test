@@ -573,7 +573,7 @@ mesher.addEventListener('mesh', e => {
       const u = `models/${objs[i]}`;
       const x = -rowSize/2 + i%rowSize;
       const z = -Math.floor(i/rowSize);
-      await mesher.addMesh(u, new THREE.Vector3(x, 0, z));
+      mesher.addMesh(u, new THREE.Vector3(x, 0, z));
     }
   })();
 
