@@ -777,7 +777,10 @@ GLTFExporter.prototype = {
 
 			if ( options.embedImages ) {
 
-				var canvas = cachedCanvas = cachedCanvas || document.createElement( 'canvas' );
+				var canvas = cachedCanvas = cachedCanvas || new OffscreenCanvas(1, 1);
+				canvas.toBlob = function toBlob(cb) {
+					this.convertToBlob().then(cb);
+				};
 
 				canvas.width = Math.min( image.width, options.maxTextureSize );
 				canvas.height = Math.min( image.height, options.maxTextureSize );
