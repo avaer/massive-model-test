@@ -397,7 +397,7 @@ const _makeParcelMesh = (extents, color, key) => {
   mesh.frustumCulled = false;
 
   const chunk = mesher.getChunk(mesh.aabb);
-  chunk.addEventListener('previewMesh', e => {
+  /* chunk.addEventListener('previewMesh', e => {
     const {previewMesh: pm} = e.data;
     mesh.add(pm);
   });
@@ -405,7 +405,7 @@ const _makeParcelMesh = (extents, color, key) => {
     const {mesh: m, previewMesh: pm} = e.data;
     mesh.remove(pm);
     mesh.add(m);
-  });
+  }); */
   mesh.destroy = () => {
     chunk.destroy();
   };
@@ -455,6 +455,11 @@ mesher.addEventListener('mesh', e => {
   const {mesh, previewMesh} = e.data;
   container.remove(previewMesh);
   container.add(mesh);
+});
+mesher.addEventListener('removeMesh', e => {
+  const {mesh, previewMesh} = e.data;
+  mesh && container.remove(mesh);
+  previewMesh && container.remove(previewMesh);
 });
 (async () => {
   // const manager = new THREE.LoadingManager();
@@ -569,12 +574,12 @@ mesher.addEventListener('mesh', e => {
     const objs = modelFiles.filter(m => /\.obj/.test(m));
     const rowSize = 10;
     const numItems = 10;
-    for (let i = 0; i < numItems; i++) {
-      const u = `models/${objs[i]}`;
-      const x = -rowSize/2 + i%rowSize;
-      const z = -Math.floor(i/rowSize);
+    // for (let i = 0; i < numItems; i++) {
+      const u = `models/${objs[3]}`;
+      const x = 1; // -rowSize/2 + i%rowSize;
+      const z = 0; // -Math.floor(i/rowSize);
       mesher.addMesh(u, new THREE.Vector3(x, 0, z));
-    }
+    // }
   })();
 
   /* {
@@ -592,9 +597,9 @@ mesher.addEventListener('mesh', e => {
     container.add(mesh);
   } */
 
-  {
+  /* {
     mesher.addMesh('models/model.vrm');
-  }
+  } */
 
   /* {
     const p = makePromise();

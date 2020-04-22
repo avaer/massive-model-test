@@ -373,8 +373,33 @@ class Mesher extends EventTarget {
               mesh.meshId = meshId;
               this.meshes.push(mesh);
 
-              const previewMesh = this.previewMeshes.find(previewMesh => previewMesh.meshId === mesh.meshId);
+              const previewMeshIndex = this.previewMeshes.findIndex(previewMesh => previewMesh.meshId === meshId);
+              const previewMesh = previewMeshIndex !== -1 ? this.previewMeshes[previewMeshIndex] : null;
+              if (previewMeshIndex !== -1) {
+                this.previewMeshes.splice(previewMeshIndex, 1);
+              }
               this.dispatchEvent(new MessageEvent('mesh', {
+                data: {
+                  mesh,
+                  previewMesh,
+                },
+              }));
+              break;
+            }
+            case 'removeMesh': {
+              const {meshId} = payload;
+              const meshIndex = this.meshes.findIndex(mesh => mesh.meshId === meshId);
+              const mesh = meshIndex !== -1 ? this.meshes[meshIndex] : null;
+              if (meshIndex !== -1) {
+                this.meshes.splice(meshIndex, 1);
+              }
+              const previewMeshIndex = this.previewMeshes.findIndex(previewMesh => previewMesh.meshId === meshId);
+              const previewMesh = previewMeshIndex !== -1 ? this.previewMeshes[previewMeshIndex] : null;
+              if (previewMeshIndex !== -1) {
+                this.previewMeshes.splice(previewMeshIndex, 1);
+              }
+
+              this.dispatchEvent(new MessageEvent('removeMesh', {
                 data: {
                   mesh,
                   previewMesh,
@@ -441,46 +466,6 @@ class Mesher extends EventTarget {
   getChunk(aabb) {
     const chunk = new EventTarget();
     this.registerChunk(aabb);
-    /* (async () => {
-      const meshes = this.getMeshesInAabb(aabb);
-      const previewMeshes = [];
-      for (let i = 0; i < meshes.length; i++) {
-        const mesh = meshes[i];
-        const previewMesh = await this.voxelize(mesh);
-        previewMeshes.push(previewMesh);
-        chunk.dispatchEvent(new MessageEvent('previewMesh', {
-          data: {
-            previewMesh,
-          },
-        }));
-      }
-      for (let i = 0; i < meshes.length; i++) {
-        const mesh = meshes[i];
-        const previewMesh = previewMeshes[i];
-        chunk.dispatchEvent(new MessageEvent('mesh', {
-          data: {
-            mesh,
-            previewMesh,
-          }
-        }));
-      }
-    })();
-    chunk.notifyMesh = async mesh => {
-      if (mesh.aabb.intersectsBox(aabb)) {
-        const previewMesh = await this.voxelize(mesh);
-        chunk.dispatchEvent(new MessageEvent('previewMesh', {
-          data: {
-            previewMesh,
-          },
-        }));
-        chunk.dispatchEvent(new MessageEvent('mesh', {
-          data: {
-            mesh,
-            previewMesh,
-          }
-        }));
-      }
-    }; */
     chunk.destroy = () => {
       this.unregisterChunk(aabb);
       this.chunks.splice(this.chunks.indexOf(chunk), 1);
@@ -809,9 +794,10 @@ class MesherServer {
           new THREE.Vector3().fromArray(min),
           new THREE.Vector3().fromArray(max),
         );
-        const index = this.chunks.findIndex(c => c.aabb.min.equals(min) && c.aabb.max.equals(max));
+        const index = this.chunks.findIndex(c => c.aabb.min.equals(aabb.min) && c.aabb.max.equals(aabb.max));
         if (index !== -1) {
           const [chunk] = this.chunks.splice(index, 1);
+          // console.log('destroy chunk', min.join(','), max.join(','), chunk.meshes.slice());
           chunk.destroy();
         }
         break;
@@ -838,9 +824,6 @@ class ChunkServer {
         {
           const {result, cleanup} = await this.mesherServer.voxelize(mesh);
           const {positions, barycentrics} = result;
-          /* const {geometry} = previewMesh;
-          const positions = geometry.attributes.position.array;
-          const barycentrics = geometry.attributes.barycentric.array; */
 
           const arrayBuffer2 = new ArrayBuffer(
             Uint32Array.BYTES_PER_ELEMENT +
@@ -894,12 +877,25 @@ class ChunkServer {
         }
       }
     }
+    this.meshes.push(mesh);
   }
   destroy() {
     for (let i = 0; i < this.meshes.length; i++){
       const mesh = this.meshes[i];
-      mesh.chunks.splice(mesh.chunks.indexOf(this), 1);
+      const index = mesh.chunks.indexOf(this);
+      if (index !== -1) {
+        mesh.chunks.splice(index, 1);
+        if (mesh.chunks.length === 0) {
+          this.mesherServer.postMessage({
+            type: 'removeMesh',
+            payload: {
+              meshId: mesh.meshId,
+            },
+          });
+        }
+      }
     }
+    this.meshes.length = 0;
   }
 }
 
