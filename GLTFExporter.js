@@ -185,7 +185,7 @@ GLTFExporter.prototype = {
 		 */
 		function stringToArrayBuffer( text ) {
 
-			if ( window.TextEncoder !== undefined ) {
+			if ( globalThis.TextEncoder !== undefined ) {
 
 				return new TextEncoder().encode( text ).buffer;
 
@@ -604,7 +604,7 @@ GLTFExporter.prototype = {
 
 			return new Promise( function ( resolve ) {
 
-				var reader = new window.FileReader();
+				var reader = new globalThis.FileReader();
 				reader.readAsArrayBuffer( blob );
 				reader.onloadend = function () {
 
@@ -2027,7 +2027,7 @@ GLTFExporter.prototype = {
 				var GLB_CHUNK_TYPE_JSON = 0x4E4F534A;
 				var GLB_CHUNK_TYPE_BIN = 0x004E4942;
 
-				var reader = new window.FileReader();
+				var reader = new globalThis.FileReader();
 				reader.readAsArrayBuffer( blob );
 				reader.onloadend = function () {
 
@@ -2061,7 +2061,7 @@ GLTFExporter.prototype = {
 						binaryChunk
 					], { type: 'application/octet-stream' } );
 
-					var glbReader = new window.FileReader();
+					var glbReader = new globalThis.FileReader();
 					glbReader.readAsArrayBuffer( glbBlob );
 					glbReader.onloadend = function () {
 
@@ -2075,7 +2075,7 @@ GLTFExporter.prototype = {
 
 				if ( outputJSON.buffers && outputJSON.buffers.length > 0 ) {
 
-					var reader = new window.FileReader();
+					var reader = new globalThis.FileReader();
 					reader.readAsDataURL( blob );
 					reader.onloadend = function () {
 
