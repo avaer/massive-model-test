@@ -544,6 +544,9 @@ class MesherServer {
       onDepthRender,
     });
 
+    this.running = false;
+    this.queue = [];
+
     this.ids = 0;
     this.meshes = [];
     this.chunks = [];
@@ -647,71 +650,86 @@ class MesherServer {
     return mesh; */
   }
   async marchPotentials(data) {
-    const {depthTextures: depthTexturesData, dims: dimsData, shift: shiftData, size: sizeData, pixelRatio, value, nvalue} = data;
+    if (!this.running) {
+      this.running = true;
 
-    const allocator = new Allocator();
+      const {depthTextures: depthTexturesData, dims: dimsData, shift: shiftData, size: sizeData, pixelRatio, value, nvalue} = data;
 
-    const depthTextures = allocator.alloc(Float32Array, depthTexturesData.length);
-    depthTextures.set(depthTexturesData);
+      const allocator = new Allocator();
 
-    const positions = allocator.alloc(Float32Array, 1024*1024*Float32Array.BYTES_PER_ELEMENT);
-    const barycentrics = allocator.alloc(Float32Array, 1024*1024*Float32Array.BYTES_PER_ELEMENT);
+      const depthTextures = allocator.alloc(Float32Array, depthTexturesData.length);
+      depthTextures.set(depthTexturesData);
 
-    const numPositions = allocator.alloc(Uint32Array, 1);
-    numPositions[0] = positions.length;
-    const numBarycentrics = allocator.alloc(Uint32Array, 1);
-    numBarycentrics[0] = barycentrics.length;
+      const positions = allocator.alloc(Float32Array, 1024*1024*Float32Array.BYTES_PER_ELEMENT);
+      const barycentrics = allocator.alloc(Float32Array, 1024*1024*Float32Array.BYTES_PER_ELEMENT);
 
-    const dims = allocator.alloc(Int32Array, 3);
-    dims.set(Int32Array.from(dimsData));
+      const numPositions = allocator.alloc(Uint32Array, 1);
+      numPositions[0] = positions.length;
+      const numBarycentrics = allocator.alloc(Uint32Array, 1);
+      numBarycentrics[0] = barycentrics.length;
 
-    const shift = allocator.alloc(Float32Array, 3);
-    shift.set(Float32Array.from(shiftData));
+      const dims = allocator.alloc(Int32Array, 3);
+      dims.set(Int32Array.from(dimsData));
 
-    const size = allocator.alloc(Float32Array, 3);
-    size.set(Float32Array.from(sizeData));
+      const shift = allocator.alloc(Float32Array, 3);
+      shift.set(Float32Array.from(shiftData));
 
-    self.Module._doMarchPotentials(
-      depthTextures.offset,
-      dims.offset,
-      shift.offset,
-      size.offset,
-      pixelRatio,
-      value,
-      nvalue,
-      positions.offset,
-      barycentrics.offset,
-      numPositions.offset,
-      numBarycentrics.offset
-    );
+      const size = allocator.alloc(Float32Array, 3);
+      size.set(Float32Array.from(sizeData));
 
-    // console.log('out num positions', numPositions[0], numBarycentrics[0]);
+      self.Module._doMarchPotentials(
+        depthTextures.offset,
+        dims.offset,
+        shift.offset,
+        size.offset,
+        pixelRatio,
+        value,
+        nvalue,
+        positions.offset,
+        barycentrics.offset,
+        numPositions.offset,
+        numBarycentrics.offset
+      );
 
-    const arrayBuffer2 = new ArrayBuffer(
-      Uint32Array.BYTES_PER_ELEMENT +
-      numPositions[0]*Float32Array.BYTES_PER_ELEMENT +
-      Uint32Array.BYTES_PER_ELEMENT +
-      numBarycentrics[0]*Uint32Array.BYTES_PER_ELEMENT
-    );
-    let index = 0;
+      // console.log('out num positions', numPositions[0], numBarycentrics[0]);
 
-    const outP = new Float32Array(arrayBuffer2, index, numPositions[0]);
-    outP.set(new Float32Array(positions.buffer, positions.byteOffset, numPositions[0]));
-    index += Float32Array.BYTES_PER_ELEMENT * numPositions[0];
+      const arrayBuffer2 = new ArrayBuffer(
+        Uint32Array.BYTES_PER_ELEMENT +
+        numPositions[0]*Float32Array.BYTES_PER_ELEMENT +
+        Uint32Array.BYTES_PER_ELEMENT +
+        numBarycentrics[0]*Uint32Array.BYTES_PER_ELEMENT
+      );
+      let index = 0;
 
-    const outB = new Float32Array(arrayBuffer2, index, numBarycentrics[0]);
-    outB.set(new Float32Array(barycentrics.buffer, barycentrics.byteOffset, numBarycentrics[0]));
-    index += Float32Array.BYTES_PER_ELEMENT * numBarycentrics[0];
+      const outP = new Float32Array(arrayBuffer2, index, numPositions[0]);
+      outP.set(new Float32Array(positions.buffer, positions.byteOffset, numPositions[0]));
+      index += Float32Array.BYTES_PER_ELEMENT * numPositions[0];
 
-    return {
-      result: {
-        positions: outP,
-        barycentrics: outB,
-      },
-      cleanup: () => {
-        allocator.freeAll();
-      },
-    };
+      const outB = new Float32Array(arrayBuffer2, index, numBarycentrics[0]);
+      outB.set(new Float32Array(barycentrics.buffer, barycentrics.byteOffset, numBarycentrics[0]));
+      index += Float32Array.BYTES_PER_ELEMENT * numBarycentrics[0];
+
+      return {
+        result: {
+          positions: outP,
+          barycentrics: outB,
+        },
+        cleanup: () => {
+          allocator.freeAll();
+
+          this.running = false;
+          if (this.queue.length > 0) {
+            const fn = this.queue.shift();
+            fn();
+          }
+        },
+      };
+    } else {
+      const p = makePromise();
+      this.queue.push(p.accept);
+      await p;
+      return await this.marchPotentials(data);
+    }
   }
   postMessage(m, txs) {
     self.postMessage(m, txs)
