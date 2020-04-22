@@ -768,7 +768,8 @@ class MesherServer {
         } else if (/\.vrm$/.test(url)) {
           const p = makePromise();
           new GLTFLoader(manager).load(url, p.accept, function onProgress() {}, p.reject);
-          const o = await p;
+          let o = await p;
+          o = o.scene;
           o.position.fromArray(position);
           this.pushMesh(o);
         } else {
