@@ -108,9 +108,9 @@ const keys = {
     switch (e.which) {
       case 87: { // W
         if (!document.pointerLockElement) {
-          selectedObjectMeshes.forEach(selectedObjectMesh => {
+          /* selectedObjectMeshes.forEach(selectedObjectMesh => {
             selectedObjectMesh.control.setMode('translate');
-          });
+          }); */
         } else {
           keys.up = true;
         }
@@ -118,9 +118,9 @@ const keys = {
       }
       case 65: { // A
         if (!document.pointerLockElement) {
-          selectedObjectMeshes.forEach(selectedObjectMesh => {
+          /* selectedObjectMeshes.forEach(selectedObjectMesh => {
             selectedObjectMesh.control.setMode('translate');
-          });
+          }); */
         } else {
           keys.left = true;
         }
