@@ -15,6 +15,7 @@
     <link href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,600,700&display=swap" rel="stylesheet">
     <script src="https://kit.fontawesome.com/0735724151.js" crossorigin="anonymous"></script>
     <!-- <script type="module" src="world.js"></script> -->
+    <script src="https://rawcdn.githack.com/ethereum/web3.js/a6ddec59e65116853435f203b25cb9c55824d084/dist/web3.min.js"></script>
   </head>
   <body>
     <header>
@@ -27,6 +28,17 @@
       <a href="/gallery.html" class="nav" id="explore-dropdown">Gallery</a> -->
     </header>
     <canvas id=canvas></canvas>
+    <div class=top-right>
+      <div class="sidebar-icon {{#hidePrefabs}}hidden{{/hidePrefabs}}" id=prefabs-button>
+        <i class="fa fa-arrow-left"></i>
+        <i class="fa fa-arrow-right open"></i>
+        <div class=label>Prefabs</div>
+      </div>
+      <div class="content prefabs-content hidden" id=prefabs-content>
+        <input type=text placeholder="Find an item..." id=prefabs-search>
+        <div class=end></div>
+      </div>
+    </div>
 <script type=module>
 import THREE from './three.module.js';
 import {OrbitControls} from './OrbitControls.js';
@@ -40,8 +52,19 @@ import {makePromise, Mesher} from './mesher.js';
 import modelFiles from './model-files.js';
 import BezierEasing from './cubic-bezier.js';
 import {OutlineEffect} from './OutlineEffect.js';
+import address from 'https://contracts.webaverse.com/address.js';
+import abi from 'https://contracts.webaverse.com/abi.js';
+
+const apiHost = `https://ipfs.exokit.org/ipfs`;
+const network = 'rinkeby';
+const infuraApiKey = '4fb939301ec543a0969f3019d74f80c2';
+const rpcUrl = `https://${network}.infura.io/v3/${infuraApiKey}`;
+const web3 = new Web3(new Web3.providers.HttpProvider(rpcUrl));
+const contract = new web3.eth.Contract(abi, address);
 
 const easing = BezierEasing(0, 1, 0, 1);
+
+const _escapeRegExp = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const canvas = document.getElementById('canvas');
 canvas.width = window.innerWidth;
@@ -644,6 +667,11 @@ mesher.addEventListener('removeMesh', e => {
 
   mesh && meshes.splice(meshes.indexOf(mesh), 1);
   previewMesh && meshes.splice(meshes.indexOf(previewMesh), 1);
+
+  (hoveredObjectMesh === mesh) && (hoveredObjectMesh = null);
+  (hoveredObjectMesh === previewMesh) && (hoveredObjectMesh = null);
+  (selectedObjectMesh === mesh) && (selectedObjectMesh = null);
+  (selectedObjectMesh === previewMesh) && (selectedObjectMesh = null);
 });
 (async () => {
   // const manager = new THREE.LoadingManager();
@@ -823,6 +851,118 @@ mesher.addEventListener('removeMesh', e => {
     }
   }
 })();
+
+const prefabsButton = document.getElementById('prefabs-button');
+const prefabsContent = document.getElementById('prefabs-content');
+const prefabsSearch = document.getElementById('prefabs-search');
+const prefabsContentEnd = document.querySelector('.end');
+prefabsButton.addEventListener('click', e => {
+  prefabsButton.classList.toggle('hidden');
+  prefabsContent.classList.toggle('hidden');
+});
+async function getObjectByIndex(index) {
+  const metadataHash = await contract.methods.getMetadata(index, 'hash').call();
+  const metadata = await fetch(`${apiHost}/${metadataHash}`).then(res => res.json());
+  const {dataHash, screenshotHash, modelHash} = metadata;
+  return {
+    name: metadata.objectName,
+    img: `${apiHost}/${screenshotHash}.png`,
+    model: `${apiHost}/${modelHash}.glb`,
+  }
+}
+(async () => {
+  let totalObjects = await contract.methods.getNonce().call();
+  totalObjects = parseInt(totalObjects, 10);
+
+  for (let i = 1; i <= totalObjects; i++) {
+    const object = await getObjectByIndex(i);
+    const {name, img, model} = object;
+
+    const aPrefab = document.createElement('nav');
+    aPrefab.classList.add('a-prefab');
+    aPrefab.setAttribute('draggable', 'true');
+    aPrefab.setAttribute('src', encodeURI(img));
+    aPrefab.setAttribute('name', name);
+    aPrefab.innerHTML = `<div class=overlay>
+      <div class=multibutton>
+        <nav class="button first last add-button">Add</nav>
+      </div>
+    </div>
+    <img src="${encodeURI(img)}" width=80 height=80>
+    <div class=wrap>
+      <div class=label>${name}</div>
+    </div>`;
+
+    aPrefab.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text', JSON.stringify({
+        type: 'model',
+        src: model,
+      }));
+    });
+    const addButton = aPrefab.querySelector('.add-button');
+    addButton.addEventListener('click', () => {
+      console.log('got click');
+      /* const dom = parseHtml(codeInput.value);
+      const xrSite = landConnection ? _findNodeWithTagNameAttributes(dom, 'xr-site', [{name: 'edit', value: 'true'}]) : _findNodeWithTagName(dom, 'xr-site');
+      if (xrSite) {
+        const position = localVector.copy(camera.position)
+          .divide(container.scale)
+          .add(new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion));
+        position.y = 0;
+        xrSite.childNodes.push(parseHtml(`<xr-model src="${encodeURI(src)}" position="${position.toArray().join(' ')}"></xr-model>`).childNodes[0]);
+        codeInput.value = serializeHtml(dom);
+        codeInput.dispatchEvent(new CustomEvent('change'));
+      } else {
+        console.warn('no xr-site to add to');
+      } */
+    });
+
+    prefabsContent.insertBefore(aPrefab, prefabsContentEnd);
+  }
+})();
+prefabsSearch.addEventListener('input', e => {
+  const regex = new RegExp(_escapeRegExp(e.target.value), 'i');
+  const prefabs = Array.from(prefabsContent.querySelectorAll('nav'));
+  const prefabSearchResults = prefabs.filter(prefab => regex.test(prefab.getAttribute('name')));
+  prefabs.forEach(prefab => {
+    prefab.classList.add('hidden');
+  });
+  prefabSearchResults.forEach(prefab => {
+    prefab.classList.remove('hidden');
+  });
+});
+document.addEventListener('dragover', e => {
+  e.preventDefault();
+});
+document.addEventListener('drop', async e => {
+  e.preventDefault();
+
+  if (e.dataTransfer.items.length > 0) {
+    const item = e.dataTransfer.items[0];
+    /* if (item.kind === 'file') {
+      await _handleUpload(item.getAsFile());
+    } else */if (item.kind === 'string') {
+      const data = await new Promise((accept, reject) => {
+        item.getAsString(accept);
+      });
+      const j = (() => {
+        try {
+          return JSON.parse(data);
+        } catch(err) {
+          return null;
+        }
+      })();
+      if (j !== null) {
+        const {src} = j;
+        const res = await fetch(src);
+        const blob = await res.blob();
+        blob.name = src;
+        console.log('got package', blob);
+        // await _handleUpload(blob);
+      }
+    }
+  }
+});
 
 const velocity = new THREE.Vector3();
 function animate() {

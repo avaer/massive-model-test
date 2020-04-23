@@ -606,6 +606,136 @@ canvas {
   flex-direction: column;
   flex: 1;
 }
+.script-input,
+.contract-input
+/*.shader-input*/
+{
+  display: flex;
+  flex-direction: column;
+  position: absolute;
+  width: 500px;
+  left: 0;
+  top: 50px;
+  bottom: 0;
+  border-top: 90px solid #DDD;
+  border-bottom: 90px solid #DDD;
+  box-shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.08);
+  z-index: 1;
+  outline: none;
+  resize: none;
+}
+.script-input > .label,
+.contract-input > .label
+/*.shader-input > .label*/
+{
+  padding: 5px 0;
+  background-color: #333;
+  color: #FFF;
+}
+.script-input > textarea,
+.contract-input > textarea
+/*.shader-input > textarea*/
+{
+  border: 0;
+  flex: 1;
+  outline: none;
+}
+.script-input:not(.open),
+.contract-input:not(.open)
+/*.shader-input:not(.open)*/
+{
+  display: none;
+}
+.top-right {
+  position: absolute;
+  top: 50px;
+  right: 0;
+  display: flex;
+  align-items: flex-start;
+  z-index: 2;
+}
+.sidebar-icon {
+  margin: 10px;
+  padding: 10px;
+  background-color: #FFF;
+  cursor: pointer;
+}
+.sidebar-icon:hover {
+  background-color: #42a5f5;
+  color: #FFF;
+}
+.sidebar-icon.hidden i:not(.open),
+.sidebar-icon:not(.hidden) i.open
+{
+  display: none;
+}
+.content {
+  background-color: #FFF;
+  height: calc(100vh - 50px);
+  width: 300px;
+  flex: 1;
+  overflow-y: auto;
+}
+.content.hidden {
+  display: none;
+}
+.prefabs-content .a-prefab
+{
+  display: flex;
+  position: relative;
+  padding: 5px 0;
+  cursor: pointer;
+  overflow: hidden;
+}
+.prefabs-content .a-prefab img
+{
+  display: flex;
+  width: 80px;
+  height: 80px;
+  margin-right: 10px;
+  font-size: 50px;
+  justify-content: center;
+  align-items: center;
+}
+.prefabs-content .a-prefab img:not([src]) {
+  visibility: hidden;
+}
+.prefabs-content .a-prefab .wrap {
+  flex: 1;
+  overflow: hidden;
+}
+.prefabs-content input[type=text]
+{
+  width: 100%;
+  margin: 0;
+  padding: 15px;
+  border-radius: 0;
+}
+.prefabs-content .a-prefab .overlay
+{
+  display: flex;
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: 0;
+  right: 0;
+  padding: 10px;
+  background-image: linear-gradient(to right, transparent, #FFF 50%);
+  justify-content: flex-end;
+  align-items: center;
+  visibility: hidden;
+}
+.prefabs-content .a-prefab:hover .overlay
+{
+  visibility: visible;
+}
+.prefabs-content .a-prefab.hidden {
+  display: none;
+}
+.prefabs-content .end {
+  width: 100%;
+  height: 1px;
+}
 /* section:nth-child(even) {
   background-color: #333;
 }
