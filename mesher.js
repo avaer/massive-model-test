@@ -173,6 +173,39 @@ const depthMaterial = (() => {
   });
 })();
 
+const idMaterial = (() => {
+  const depthVsh = `
+    attribute vec3 id;
+    varying vec3 vId;
+    void main() {
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.);
+      vId = id;
+    }
+  `;
+  const depthFsh = `
+    varying vec3 vId;
+    void main() {
+      gl_FragColor = vec4(vId, 0.0);
+    }
+  `;
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      /* uNear: {
+        type: 'f',
+        value: 0,
+      },
+      uFar: {
+        type: 'f',
+        value: 0,
+      }, */
+    },
+    vertexShader: depthVsh,
+    fragmentShader: depthFsh,
+    // transparent: true,
+    side: THREE.DoubleSide,
+  });
+})();
+
 const makeGlobalMaterial = () => new THREE.ShaderMaterial({
   uniforms: {},
   vertexShader: `\
@@ -223,7 +256,7 @@ const makeGlobalMaterial = () => new THREE.ShaderMaterial({
 });
 
 export class XRRaycaster {
-  constructor({width = 512, height = 512, pixelRatio = 1, voxelSize, renderer = new THREE.WebGLRenderer(), onDepthRender = (target, camera) => {}} = {}) {
+  constructor({width = 512, height = 512, pixelRatio = 1, voxelSize, renderer = new THREE.WebGLRenderer(), onDepthRender = () => {}, onIntersectRender = () => {}} = {}) {
     // this.width = width;
     // this.height = height;
     this.renderer = renderer;
@@ -287,6 +320,29 @@ export class XRRaycaster {
       renderer.readRenderTargetPixels(depthTargets[i], 0, 0, width * pixelRatio, height * pixelRatio, new Float32Array(depthTextures.buffer, depthTextures.byteOffset + offset * Float32Array.BYTES_PER_ELEMENT, width * pixelRatio * height * pixelRatio * 4), 0);
     };
     this.depthTarget = depthTarget;
+
+    const intersectTarget = new THREE.WebGLRenderTarget(1, 1, {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.NearestFilter,
+      format: THREE.RGBAFormat,
+      // type: THREE.FloatType,
+      depthBuffer: true,
+      stencilBuffer: false,
+    });
+    intersectTarget.raycast = (origin, direction) => {
+      onIntersectRender({
+        origin,
+        direction,
+        target: intersectTarget,
+        pixels: intersectPixels,
+      });
+
+      const id = (this.intersectPixels[0] << 16) | (this.intersectPixels[1] << 8) | this.intersectPixels[2];
+      return id;
+    };
+    this.intersectTarget = intersectTarget;
+    const intersectPixels = new Uint8Array(4);
+    this.intersectPixels = intersectPixels;
   }
   updateView(x, y, z, q) {
     this.depthTarget.updateView(x, y, z, q);
@@ -299,6 +355,9 @@ export class XRRaycaster {
   }
   getDepthBufferPixels(i, depthTextures, offset) {
     return this.depthTarget.getDepthBufferPixels(i, depthTextures, offset);
+  }
+  raycast(origin, direction) {
+    return this.intersectTarget.raycast(origin, direction);
   }
 }
 
@@ -419,6 +478,9 @@ class Mesher extends EventTarget {
       w.onerror = err => {
         console.warn(err);
       };
+      w.message = (req, transfers) => new Promise((accept, reject) => {
+        w.postMessage(req, transfers);
+      });
       w.request = (req, transfers) => new Promise((accept, reject) => {
         w.postMessage(req, transfers);
 
@@ -439,14 +501,14 @@ class Mesher extends EventTarget {
 
   }
   addMesh(url, position = new THREE.Vector3()) {
-    this.worker.request({
+    this.worker.message({
       method: 'addMesh',
       url,
       position: position.toArray(),
     });
   }
   registerChunk(aabb) {
-    this.worker.request({
+    this.worker.message({
       method: 'registerChunk',
       aabb: {
         min: aabb.min.toArray(),
@@ -455,7 +517,7 @@ class Mesher extends EventTarget {
     });
   }
   unregisterChunk(aabb) {
-    this.worker.request({
+    this.worker.message({
       method: 'unregisterChunk',
       aabb: {
         min: aabb.min.toArray(),
@@ -472,6 +534,14 @@ class Mesher extends EventTarget {
     };
     this.chunks.push(chunk);
     return chunk;
+  }
+  async intersectMeshes(origin, direction) {
+    const res = await this.worker.request({
+      method: 'intersectMeshes',
+      origin,
+      direction,
+    });
+    return res;
   }
 }
 
@@ -512,28 +582,59 @@ class MesherServer {
 
       // console.log('render', target, near, far, matrixWorld, projectionMatrix);
 
-      {
-        // const unhideUiMeshes = _hideUiMeshes();
+      // const unhideUiMeshes = _hideUiMeshes();
 
-        this.scene.overrideMaterial = depthMaterial;
-        // const oldVrEnabled = renderer.vr.enabled;
-        // renderer.vr.enabled = false;
-        // const oldClearColor = localColor.copy(renderer.getClearColor());
-        // const oldClearAlpha = renderer.getClearAlpha();
-        renderer.setRenderTarget(target);
+      scene.overrideMaterial = depthMaterial;
+      // const oldVrEnabled = renderer.vr.enabled;
+      // renderer.vr.enabled = false;
+      // const oldClearColor = localColor.copy(renderer.getClearColor());
+      // const oldClearAlpha = renderer.getClearAlpha();
+      renderer.setRenderTarget(target);
 
-        renderer.setClearColor(new THREE.Color(0, 0, 0), 1);
-        // renderer.setViewport(0, 0, width*pixelRatio, height*pixelRatio);
-        renderer.render(scene, raycasterCamera);
+      renderer.setClearColor(new THREE.Color(0, 0, 0), 1);
+      // renderer.setViewport(0, 0, width*pixelRatio, height*pixelRatio);
+      renderer.render(scene, raycasterCamera);
 
-        scene.overrideMaterial = null;
-        // renderer.vr.enabled = oldVrEnabled;
-        // renderer.setClearColor(oldClearColor, oldClearAlpha);
+      scene.overrideMaterial = null;
+      // renderer.vr.enabled = oldVrEnabled;
+      // renderer.setClearColor(oldClearColor, oldClearAlpha);
 
-        // unhideUiMeshes();
+      // unhideUiMeshes();
 
-        renderer.setRenderTarget(null);
-      }
+      renderer.setRenderTarget(null);
+    };
+    const onIntersectRender = ({origin, direction, target, pixels}) => {
+      raycasterCamera.position.fromArray(origin);
+      raycasterCamera.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), new THREE.Vector3().fromArray(direction));
+      raycasterCamera.updateMatrixWorld();
+      raycasterCamera.near = 0.1
+      raycasterCamera.far = 1000;
+      raycasterCamera.updateProjectionMatrix();
+
+      // console.log('render', target, near, far, matrixWorld, projectionMatrix);
+
+      // const unhideUiMeshes = _hideUiMeshes();
+
+      scene.overrideMaterial = idMaterial;
+      // const oldVrEnabled = renderer.vr.enabled;
+      // renderer.vr.enabled = false;
+      // const oldClearColor = localColor.copy(renderer.getClearColor());
+      // const oldClearAlpha = renderer.getClearAlpha();
+      renderer.setRenderTarget(target);
+
+      renderer.setClearColor(new THREE.Color(0, 0, 0), 1);
+      // renderer.setViewport(0, 0, width*pixelRatio, height*pixelRatio);
+      renderer.render(scene, raycasterCamera);
+
+      scene.overrideMaterial = null;
+      // renderer.vr.enabled = oldVrEnabled;
+      // renderer.setClearColor(oldClearColor, oldClearAlpha);
+
+      // unhideUiMeshes();
+
+      renderer.setRenderTarget(null);
+
+      renderer.readRenderTargetPixels(target, 0, 0, 1, 1, pixels, 0);
     };
     this.xrRaycaster = new XRRaycaster({
       width: voxelWidth,
@@ -542,6 +643,7 @@ class MesherServer {
       voxelSize,
       renderer,
       onDepthRender,
+      onIntersectRender,
     });
 
     this.running = false;
@@ -571,7 +673,29 @@ class MesherServer {
   } */
   pushMesh(o) {
     o.updateMatrixWorld();
-    o.meshId = ++this.ids;
+    o.traverse(o => {
+      if (o.isMesh) {
+        o.frustumCulled = false;
+        o.isSkinnedMesh = false;
+      }
+    });
+    const meshId = ++this.ids;
+    o.meshId = meshId;
+    const c = Uint8Array.from([
+      ((meshId >> 16) & 0xFF),
+      ((meshId >> 8) & 0xFF),
+      (meshId & 0xFF),
+    ]);
+    o.traverse(o => {
+      if (o.isMesh) {
+        const numPositions = o.geometry.attributes.position.array.length;
+        const ids = new Uint8Array(numPositions);
+        for (let i = 0; i < numPositions; i += 3) {
+          ids.set(c, i);
+        }
+        o.geometry.setAttribute('id', new THREE.BufferAttribute(ids, 3, true));
+      }
+    });
     o.aabb = new THREE.Box3().setFromObject(o);
     o.chunks = [];
     this.meshes.push(o);
@@ -580,13 +704,13 @@ class MesherServer {
     }
   }
   async voxelize(m) {
-    m.updateMatrixWorld();
+    /* m.updateMatrixWorld();
     m.traverse(o => {
       if (o.isMesh) {
         o.frustumCulled = false;
         o.isSkinnedMesh = false;
       }
-    });
+    }); */
     this.scene.add(m);
 
     const aabb = new THREE.Box3().setFromObject(m);
@@ -731,6 +855,19 @@ class MesherServer {
       return await this.marchPotentials(data);
     }
   }
+  raycast(origin, direction) {
+    for (let i = 0; i < this.meshes.length; i++) {
+      this.scene.add(this.meshes[i]);
+    }
+
+    const id = this.xrRaycaster.raycast(origin, direction);
+
+    for (let i = 0; i < this.meshes.length; i++) {
+      this.scene.remove(this.meshes[i]);
+    }
+
+    return id;
+  }
   postMessage(m, txs) {
     self.postMessage(m, txs)
   }
@@ -817,6 +954,21 @@ class MesherServer {
           const [chunk] = this.chunks.splice(index, 1);
           chunk.destroy();
         }
+        break;
+      }
+      case 'intersectMeshes': {
+        const {
+          origin,
+          direction,
+        } = data;
+        const id = this.raycast(origin, direction);
+
+        self.postMessage({
+          result: {
+            id,
+          },
+        });
+
         break;
       }
       default: {

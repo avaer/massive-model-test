@@ -165,13 +165,6 @@ scene.onAfterRender = () => {
 
   renderingOutline = false;
 };
-const localRaycaster = new THREE.Raycaster();
-const _updateRaycasterFromMouseEvent = (raycaster, e) => {
-  const mouse = new THREE.Vector2(( ( e.clientX ) / window.innerWidth ) * 2 - 1, - ( ( e.clientY ) / window.innerHeight ) * 2 + 1);
-  raycaster.setFromCamera(mouse, camera);
-  raycaster.ray.origin.add(raycaster.ray.direction);
-};
-
 renderer.domElement.addEventListener('dblclick', async e => {
   await renderer.domElement.requestPointerLock();
 });
@@ -182,6 +175,13 @@ const keys = {
   right: false,
   shift: false,
 };
+const localRaycaster = new THREE.Raycaster();
+const _updateRaycasterFromMouseEvent = (raycaster, e) => {
+  const mouse = new THREE.Vector2(( ( e.clientX ) / window.innerWidth ) * 2 - 1, - ( ( e.clientY ) / window.innerHeight ) * 2 + 1);
+  raycaster.setFromCamera(mouse, camera);
+  raycaster.ray.origin.add(raycaster.ray.direction);
+};
+let raycasting = false;
 [renderer.domElement].forEach(w => {
   w.addEventListener('keydown', e => {
     switch (e.which) {
@@ -268,17 +268,19 @@ const keys = {
       }
     }
   });
-  w.addEventListener('mousemove', e => {
+  w.addEventListener('mousemove', async e => {
     if (!document.pointerLockElement) {
-      _updateRaycasterFromMouseEvent(localRaycaster, e);
-      const intersections = localRaycaster.intersectObjects(meshes, true);
-      if (intersections.length > 0) {
-        hoveredObjectMesh = intersections[0].object;
-        while (!hoveredObjectMesh.meshId) {
-          hoveredObjectMesh = hoveredObjectMesh.parent;
+      if (!raycasting) {
+        raycasting = true;
+        _updateRaycasterFromMouseEvent(localRaycaster, e);
+        const res = await mesher.intersectMeshes(localRaycaster.ray.origin.toArray(), localRaycaster.ray.direction.toArray());
+        const {id} = res;
+        if (id) {
+          hoveredObjectMesh = meshes.find(m => m.meshId === id) || null;
+        } else {
+          hoveredObjectMesh = null;
         }
-      } else {
-        hoveredObjectMesh = null;
+        raycasting = false;
       }
     } else {
       const {movementX, movementY} = e;
@@ -644,7 +646,7 @@ const _loadParcelMeshes = p => {
 };
 
 const mesher = new Mesher(renderer, scene, camera);
-let meshes = [];
+const meshes = [];
 mesher.addEventListener('previewMesh', e => {
   const {previewMesh} = e.data;
 
