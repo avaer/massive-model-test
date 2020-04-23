@@ -39,6 +39,7 @@ import {BufferGeometryUtils} from './BufferGeometryUtils.js';
 import {makePromise, Mesher} from './mesher.js';
 import modelFiles from './model-files.js';
 import BezierEasing from './cubic-bezier.js';
+import {OutlineEffect} from './OutlineEffect.js';
 
 const easing = BezierEasing(0, 1, 0, 1);
 
@@ -92,6 +93,59 @@ orbitControls.screenSpacePanning = true;
 // orbitControls.enabled = !!loginToken;
 orbitControls.enableMiddleZoom = false;
 orbitControls.update();
+
+const hoverOutlineEffect = new OutlineEffect(renderer, {
+  defaultThickness: 0.01,
+  defaultColor: new THREE.Color(0x42a5f5).toArray(),
+  defaultAlpha: 0.5,
+  // defaultKeepAlive: false,//true,
+});
+const selectOutlineEffect = new OutlineEffect(renderer, {
+  defaultThickness: 0.01,
+  defaultColor: new THREE.Color(0x66bb6a).toArray(),
+  defaultAlpha: 0.5,
+  // defaultKeepAlive: false,//true,
+});
+const outlineScene = new THREE.Scene();
+let hoveredObjectMesh = null;
+let selectedObjectMesh = null;
+let renderingOutline = false;
+scene.onAfterRender = () => {
+  if (renderingOutline) return;
+  renderingOutline = true;
+
+  outlineScene.position.copy(container.position);
+  outlineScene.quaternion.copy(container.quaternion);
+  outlineScene.scale.copy(container.scale);
+
+  let oldHoverParent;
+  if (hoveredObjectMesh) {
+    oldHoverParent = hoveredObjectMesh.parent;
+    outlineScene.add(hoveredObjectMesh);
+  }
+  hoverOutlineEffect.renderOutline(outlineScene, camera);
+  if (oldHoverParent) {
+    oldHoverParent.add(hoveredObjectMesh);
+  }
+
+  let oldSelectParent;
+  if (selectedObjectMesh) {
+    oldSelectParent = selectedObjectMesh.parent;
+    outlineScene.add(selectedObjectMesh);
+  }
+  selectOutlineEffect.renderOutline(outlineScene, camera);
+  if (oldSelectParent) {
+    oldSelectParent.add(selectedObjectMesh);
+  }
+
+  renderingOutline = false;
+};
+const localRaycaster = new THREE.Raycaster();
+const _updateRaycasterFromMouseEvent = (raycaster, e) => {
+  const mouse = new THREE.Vector2(( ( e.clientX ) / window.innerWidth ) * 2 - 1, - ( ( e.clientY ) / window.innerHeight ) * 2 + 1);
+  raycaster.setFromCamera(mouse, camera);
+  raycaster.ray.origin.add(raycaster.ray.direction);
+};
 
 renderer.domElement.addEventListener('dblclick', async e => {
   await renderer.domElement.requestPointerLock();
@@ -191,13 +245,24 @@ const keys = {
   });
   w.addEventListener('mousemove', e => {
     if (!document.pointerLockElement) {
-      // _updateRaycasterFromMouseEvent(localRaycaster, e);
-      // _updateTool(localRaycaster);
+      _updateRaycasterFromMouseEvent(localRaycaster, e);
+      const intersections = localRaycaster.intersectObjects(meshes, true);
+      if (intersections.length > 0) {
+        hoveredObjectMesh = intersections[0].object;
+        while (!hoveredObjectMesh.meshId) {
+          hoveredObjectMesh = hoveredObjectMesh.parent;
+        }
+      } else {
+        hoveredObjectMesh = null;
+      }
     } else {
       const {movementX, movementY} = e;
       camera.rotation.y -= movementX * Math.PI*2*0.001;
       camera.rotation.x -= movementY * Math.PI*2*0.001;
     }
+  });
+  w.addEventListener('mousedown', e => {
+    selectedObjectMesh = hoveredObjectMesh;
   });
 });
 
@@ -557,17 +622,28 @@ const mesher = new Mesher(renderer, scene, camera);
 let meshes = [];
 mesher.addEventListener('previewMesh', e => {
   const {previewMesh} = e.data;
+
   container.add(previewMesh);
+
+  meshes.push(previewMesh);
 });
 mesher.addEventListener('mesh', e => {
   const {mesh, previewMesh} = e.data;
+
   container.remove(previewMesh);
   container.add(mesh);
+
+  meshes.splice(meshes.indexOf(previewMesh), 1);
+  meshes.push(mesh);
 });
 mesher.addEventListener('removeMesh', e => {
   const {mesh, previewMesh} = e.data;
+
   mesh && container.remove(mesh);
   previewMesh && container.remove(previewMesh);
+
+  mesh && meshes.splice(meshes.indexOf(mesh), 1);
+  previewMesh && meshes.splice(meshes.indexOf(previewMesh), 1);
 });
 (async () => {
   // const manager = new THREE.LoadingManager();
