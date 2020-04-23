@@ -52,6 +52,7 @@ import {makePromise, Mesher} from './mesher.js';
 import modelFiles from './model-files.js';
 import BezierEasing from './cubic-bezier.js';
 import {OutlineEffect} from './OutlineEffect.js';
+import {XRPackageEngine, XRPackage} from './xrpackage.js';
 import address from 'https://contracts.webaverse.com/address.js';
 import abi from 'https://contracts.webaverse.com/abi.js';
 
@@ -66,19 +67,20 @@ const easing = BezierEasing(0, 1, 0, 1);
 
 const _escapeRegExp = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-const canvas = document.getElementById('canvas');
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
-const context = canvas.getContext('webgl2', {
-  antialias: true,
-});
+const pe = new XRPackageEngine();
+document.body.appendChild(pe.domElement);
+
 const renderer = new THREE.WebGLRenderer({
-  canvas,
-  context,
+  canvas: pe.domElement,
+  context: pe.context,
+  // alpha: true,
 });
+renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
+renderer.autoClear = false;
 renderer.sortObjects = false;
 renderer.physicallyCorrectLights = true;
+renderer.xr.enabled = true;
 // renderer.shadowMap.enabled = true;
 // renderer.shadowMap.type = THREE.PCFShadowMap;
 
@@ -896,6 +898,7 @@ async function getObjectByIndex(index) {
     aPrefab.addEventListener('dragstart', e => {
       e.dataTransfer.setData('text', JSON.stringify({
         type: 'model',
+        name: `${name}.glb`,
         src: model,
       }));
     });
@@ -953,12 +956,18 @@ document.addEventListener('drop', async e => {
         }
       })();
       if (j !== null) {
-        const {src} = j;
+        const {name, src} = j;
         const res = await fetch(src);
         const blob = await res.blob();
-        blob.name = src;
-        console.log('got package', blob);
-        // await _handleUpload(blob);
+        blob.name = name;
+        const d = await XRPackage.compileFromFile(blob);
+        const p = new XRPackage(d);
+        await pe.add(p);
+        p.setMatrix(new THREE.Matrix4().compose(
+          camera.position.clone().add(new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion)),
+          camera.quaternion,
+          new THREE.Vector3(1, 1, 1)
+        ));
       }
     }
   }
@@ -966,6 +975,14 @@ document.addEventListener('drop', async e => {
 
 const velocity = new THREE.Vector3();
 function animate() {
+  renderer.state.reset();
+
+  renderer.render(scene, camera);
+}
+renderer.setAnimationLoop(animate);
+renderer.xr.setSession(pe.fakeSession);
+
+pe.addEventListener('tick', () => {
   const speed = 0.015 * (keys.shift ? 3 : 1);
   const cameraEuler = camera.rotation.clone();
   cameraEuler.x = 0;
@@ -996,91 +1013,14 @@ function animate() {
     orbitControls.update();
   }
 
+  pe.setCamera(camera);
+
   _loadParcelMeshes(orbitControls.target);
   parcelMeshes.forEach(parcelMesh => {
     parcelMesh.material.uniforms.uFlash.value = 1-((Date.now() - parcelMesh.startTime) % 1000)/1000;
     parcelMesh.material.uniforms.uStart.value = Math.min(easing((Date.now() - parcelMesh.startTime)/2000), 1);
   });
-
-  /* const f = (Math.sin((Date.now()%1000)/1000*Math.PI*2)+1)/2*0.3;
-  for (let i = 0; i < meshes.length; i++) {
-    const mesh = meshes[i];
-    mesh.position.set(mesh.x*f, 0, mesh.z*f);
-  } */
-  
-  /* if (currentSession) {
-    for (let i = 0; i < 2; i++) {
-      const controller = renderer.xr.getController(i);
-      if (controller.userData.data) {
-        if (controller.userData.data.handedness === 'left') {
-          uiMesh.position.copy(controller.position);
-          uiMesh.quaternion.copy(controller.quaternion);
-        } else if (controller.userData.data.handedness === 'right') {
-          _updateRaycasterFromObject(localRaycaster, controller);
-          _updateTool(localRaycaster);
-        }
-      }
-    }
-
-    _updateControllers();
-
-    updatePlayerFromXr(renderer.xr, camera);
-  } else {
-    const speed = 0.015 * (keys.shift ? 3 : 1);
-    const cameraEuler = camera.rotation.clone();
-    cameraEuler.x = 0;
-    cameraEuler.z = 0;
-    const extraVelocity = new THREE.Vector3();
-    if (keys.left) {
-      extraVelocity.add(new THREE.Vector3(-1, 0, 0).applyEuler(cameraEuler));
-    }
-    if (keys.right) {
-      extraVelocity.add(new THREE.Vector3(1, 0, 0).applyEuler(cameraEuler));
-    }
-    if (keys.up) {
-      extraVelocity.add(new THREE.Vector3(0, 0, -1).applyEuler(cameraEuler));
-    }
-    if (keys.down) {
-      extraVelocity.add(new THREE.Vector3(0, 0, 1).applyEuler(cameraEuler));
-    }
-    if (extraVelocity.length() > 0) {
-      extraVelocity.normalize().multiplyScalar(speed);
-    }
-    velocity.add(extraVelocity);
-    camera.position.add(velocity);
-    velocity.multiplyScalar(0.7);
-    
-    orbitControls.target.copy(camera.position).add(new THREE.Vector3(0, 0, -1.5).applyQuaternion(camera.quaternion));
-    
-    updatePlayerFromCamera(camera);
-  }
-
-  for (let i = 0; i < peerConnections.length; i++) {
-    const peerConnection = peerConnections[i];
-    peerConnection.rig && peerConnection.rig.update();
-  }
-
-  tickObjectScript(objectState);
-
-  if (ammo) {
-    ammo.simulate();
-    for (let i = 0; i < objectMeshes.length; i++) {
-      ammo.updateObjectMesh(objectMeshes[i]);
-    }
-  } */
-
-  /* const thirdperson = selectedTool === 'thirdperson';
-  let oldCameraPosition;
-  if (thirdperson) {
-    oldCameraPosition = camera.position.clone();
-    camera.position.add(new THREE.Vector3(0, 0, 2).applyQuaternion(camera.quaternion));
-  } */
-  renderer.render(scene, camera);
-  /* if (thirdperson) {
-    camera.position.copy(oldCameraPosition);
-  } */
-}
-renderer.setAnimationLoop(animate);
+});
 
 window.addEventListener('resize', e => {
   renderer.setSize(window.innerWidth, window.innerHeight);
