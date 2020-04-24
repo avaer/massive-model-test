@@ -1,0 +1,129 @@
+<!doctype html>
+<html>
+<body>
+<script type=module>
+import * as THREE from './three.module.js';
+import {hijackCanvas, CanvasRenderingContext2D, WebGLRenderingContext, WebGL2RenderingContext} from './Graphics.js';
+import * as XR from './XR.js';
+import GlobalContext from './GlobalContext.js';
+
+hijackCanvas();
+
+const xrOffsetMatrix = new THREE.Matrix4();
+GlobalContext.getXrOffsetMatrix = () => xrOffsetMatrix;
+GlobalContext.xrFramebuffer = null;
+
+console.log('iframe script');
+(() => {
+function makePromise() {
+  let resolve, reject;
+  const result = new Promise((a, b) => {
+    resolve = a;
+    reject = b;
+  });
+  result.resolve = resolve;
+  result.reject = reject;
+  return result;
+};
+
+class XRPackageManager extends EventTarget {
+  constructor() {
+    super();
+
+    this.session = null;
+    this.loadPromise = makePromise();
+    this.listenedLoad = false;
+  }
+  async iframeInit({engine, indexHtml, context, xrState}) {
+    console.log('iframe init');
+    document.open();
+    document.write(indexHtml);
+    document.close();
+
+    GlobalContext.xrState = xrState;
+    /* GlobalContext.xrFramebuffer = context.createFramebuffer();
+    const fboTex = context.createTexture();
+    context.bindTexture(context.TEXTURE_2D, fboTex);
+    const size = 256;
+    context.texImage2D(context.TEXTURE_2D, 0, context.RGBA, size, size, 0, context.RGBA, context.UNSIGNED_BYTE, null);
+    context.bindFramebuffer(context.FRAMEBUFFER, GlobalContext.xrFramebuffer);
+    context.framebufferTexture2D(context.FRAMEBUFFER, context.COLOR_ATTACHMENT0, context.TEXTURE_2D, fboTex, 0); */
+    GlobalContext.proxyContext = context;
+    GlobalContext.contexts = [];
+    
+    window.requestAnimationFrame = engine.requestAnimationFrame.bind(engine);
+    window.cancelAnimationFrame = engine.cancelAnimationFrame.bind(engine);
+    // window.innerWidth = canvas.width;
+    // window.innerHeight = canvas.height;
+
+    window.CanvasRenderingContext2D = CanvasRenderingContext2D;
+    window.WebGLRenderingContext = WebGLRenderingContext;
+    window.WebGL2RenderingContext = WebGL2RenderingContext;
+
+    const session = new XR.XRSession();
+    session.onrequestanimationframe = engine.requestAnimationFrame.bind(engine);
+    session.oncancelanimationframe = engine.cancelAnimationFrame.bind(engine);
+    this.session = session;
+
+    delete Navigator.prototype.xr;
+    window.navigator.xr = new XR.XR(window);
+    window.navigator.xr.onrequestpresent = () => ({session: this.session});
+    const self = this;
+    window.navigator.xr.addEventListener = (_addEventListener => function addEventListener(e, fn, opts) {
+      _addEventListener.apply(this, arguments);
+
+      if (e === 'sessiongranted' && !self.listenedLoad) {
+        self.listenedLoad = true;
+        self.loadPromise.then(data => {
+          this.dispatchEvent(new MessageEvent('sessiongranted', {
+            data,
+          }));
+        });
+      }
+    })(window.navigator.xr.addEventListener);
+    
+    // window.Gamepad = Gamepad;
+    window.XR = XR.XR;
+    window.XRSession = XR.XRSession;
+    window.XRRenderState = XR.XRRenderState;
+    window.XRWebGLLayer = XR.XRWebGLLayer;
+    window.XRFrame = XR.XRFrame;
+    window.XRView = XR.XRView;
+    window.XRViewport = XR.XRViewport;
+    window.XRPose = XR.XRPose;
+    window.XRViewerPose = XR.XRViewerPose;
+    window.XRInputSource = XR.XRInputSource;
+    window.XRRay = XR.XRRay;
+    window.XRInputPose = XR.XRInputPose;
+    window.XRInputSourceEvent = XR.XRInputSourceEvent;
+    window.XRSpace = XR.XRSpace;
+    window.XRReferenceSpace = XR.XRReferenceSpace;
+    window.XRBoundedReferenceSpace = XR.XRBoundedReferenceSpace;
+
+    this.loadPromise.resolve({});
+  }
+  /* addEventListener(e, fn, opts) {
+    super.addEventListener(e, fn, opts);
+
+    if (e === 'load' && !this.listenedLoad) {
+      this.listenedLoad = true;
+      this.loadPromise.then(data => {
+        this.dispatchEvent(new MessageEvent('load', {
+          data,
+        }));
+      });
+    }
+  } */
+  setSession(session) {
+    if (session) {
+      GlobalContext.xrFramebuffer = session.renderState.baseLayer.framebuffer;
+    } else {
+      GlobalContext.xrFramebuffer = null;
+    }
+  }
+}
+window.xrpackage = new XRPackageManager();
+})();
+</script>
+</body>
+</html>
