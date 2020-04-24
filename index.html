@@ -72,7 +72,7 @@ document.body.appendChild(pe.domElement);
 
 const renderer = new THREE.WebGLRenderer({
   canvas: pe.domElement,
-  context: pe.context,
+  context: pe.getContext('webgl'),
   // alpha: true,
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
