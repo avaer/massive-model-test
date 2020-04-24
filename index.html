@@ -1009,7 +1009,7 @@ pe.addEventListener('tick', () => {
   camera.position.add(velocity);
   velocity.multiplyScalar(0.7);
 
-  orbitControls.target.copy(camera.position).add(new THREE.Vector3(0, 0, -1.5).applyQuaternion(camera.quaternion));
+  orbitControls.target.copy(camera.position).add(new THREE.Vector3(0, 0, -3).applyQuaternion(camera.quaternion));
 
   if (orbitControls.enabled && !document.pointerLockElement) {
     orbitControls.update();
