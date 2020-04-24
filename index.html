@@ -662,6 +662,9 @@ mesher.addEventListener('mesh', e => {
 
   meshes.splice(meshes.indexOf(previewMesh), 1);
   meshes.push(mesh);
+
+  (hoveredObjectMesh === previewMesh) && (hoveredObjectMesh = null);
+  (selectedObjectMesh === previewMesh) && (selectedObjectMesh = null);
 });
 mesher.addEventListener('removeMesh', e => {
   const {mesh, previewMesh} = e.data;
