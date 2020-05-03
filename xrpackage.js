@@ -125,7 +125,7 @@ GlobalContext.xrFramebuffer = null;
 const xrTypeLoaders = {
   'webxr-site@0.0.1': async function(p) {
     const iframe = document.createElement('iframe');
-    iframe.src = 'iframe.html';
+    iframe.src = `iframe.html#id=${p.id}`;
     iframe.style.position = 'absolute';
     iframe.style.top = '-10000px';
     iframe.style.left = '-10000px';
@@ -676,10 +676,12 @@ export class XRPackageEngine extends EventTarget {
   }
 }
 
+let packageIds = Date.now();
 export class XRPackage extends EventTarget {
   constructor(d) {
     super();
 
+    this.id = ++packageIds;
     this.loaded = false;
 
     const bundle = new wbn.Bundle(d);
