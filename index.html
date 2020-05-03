@@ -1066,7 +1066,9 @@ window.addEventListener('resize', e => {
   camera.updateProjectionMatrix();
 });
 
-})();
+})().catch(err => {
+  console.warn(err);
+});
 </script>
   </body>
 </html>
