@@ -329,15 +329,15 @@ class XRWebGLLayer {
   }
   set framebuffer(framebuffer) {}
 
-  /* get framebufferWidth() {
-    return xrState.renderWidth[0]*2;
+  get framebufferWidth() {
+    return GlobalContext.xrState.renderWidth[0]*2;
   }
   set framebufferWidth(framebufferWidth) {}
   
   get framebufferHeight() {
-    return xrState.renderHeight[0];
+    return GlobalContext.xrState.renderHeight[0];
   }
-  set framebufferHeight(framebufferHeight) {} */
+  set framebufferHeight(framebufferHeight) {}
 }
 
 const _applyXrOffsetToPose = (pose, xrOffsetMatrix, inverse, premultiply) => {
