@@ -46,7 +46,7 @@ header .nav {
   color: inherit;
   font-size: 14px;
   text-decoration: none;
-  text-transform: uppercase;
+  /* text-transform: uppercase; */
 }
 header .nav:hover, header .nav.open {
   border-bottom-color: #ef5350;
