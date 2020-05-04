@@ -16,6 +16,10 @@
     <script src="https://kit.fontawesome.com/0735724151.js" crossorigin="anonymous"></script>
     <!-- <script type="module" src="world.js"></script> -->
     <script src="https://rawcdn.githack.com/ethereum/web3.js/a6ddec59e65116853435f203b25cb9c55824d084/dist/web3.min.js"></script>
+    <script type="module">
+      import THREE from './three.module.js';
+      window.THREE = THREE;
+    </script>
   </head>
   <body>
     <header>
@@ -40,9 +44,10 @@
       </div>
     </div>
 <script type=module>
-import THREE from './three.module.js';
+import {XRPackageEngine, XRPackage} from './xrpackage.js';
 import {OrbitControls} from './OrbitControls.js';
 import {GLTFLoader} from './GLTFLoader.js';
+
 import {LegacyGLTFLoader} from './LegacyGLTFLoader.js';
 import {OBJLoader2} from './OBJLoader2.js';
 import {MTLLoader} from './MTLLoader.js';
@@ -52,9 +57,18 @@ import {makePromise, Mesher} from './mesher.js';
 import modelFiles from './model-files.js';
 import BezierEasing from './cubic-bezier.js';
 import {OutlineEffect} from './OutlineEffect.js';
-import {XRPackageEngine, XRPackage} from './xrpackage.js';
 import address from 'https://contracts.webaverse.com/address.js';
 import abi from 'https://contracts.webaverse.com/abi.js';
+/* import Avatar from 'https://avatars.exokit.org/avatars.js';
+import avatarModels from 'https://avatar-models.exokit.org/avatar-models.js';
+import ModelLoader from 'https://model-loader.exokit.org/model-loader.js'; */
+
+let hidden = false;
+window.addEventListener('keydown', e => {
+  if (e.which === 79) {
+    hidden = !hidden;
+  }
+});
 
 (async () => {
 
@@ -683,15 +697,15 @@ const meshes = [];
 mesher.addEventListener('previewMesh', e => {
   const {previewMesh} = e.data;
 
-  container.add(previewMesh);
+  pe.scene.add(previewMesh);
 
   meshes.push(previewMesh);
 });
 mesher.addEventListener('mesh', e => {
   const {mesh, previewMesh} = e.data;
 
-  container.remove(previewMesh);
-  container.add(mesh);
+  pe.scene.remove(previewMesh);
+  pe.scene.add(mesh);
 
   meshes.splice(meshes.indexOf(previewMesh), 1);
   meshes.push(mesh);
@@ -702,8 +716,8 @@ mesher.addEventListener('mesh', e => {
 mesher.addEventListener('removeMesh', e => {
   const {mesh, previewMesh} = e.data;
 
-  mesh && container.remove(mesh);
-  previewMesh && container.remove(previewMesh);
+  mesh && pe.scene.remove(mesh);
+  previewMesh && pe.scene.remove(previewMesh);
 
   mesh && meshes.splice(meshes.indexOf(mesh), 1);
   previewMesh && meshes.splice(meshes.indexOf(previewMesh), 1);
@@ -822,7 +836,7 @@ mesher.addEventListener('removeMesh', e => {
     return result;
   })(); */
 
-  (async () => {
+  /* (async () => {
     const objs = modelFiles.filter(m => /\.obj/.test(m));
     const rowSize = 10;
     const numItems = 10;
@@ -832,7 +846,7 @@ mesher.addEventListener('removeMesh', e => {
       const z = -Math.floor(i/rowSize);
       mesher.addMesh(u, new THREE.Vector3(x, 0, z));
     }
-  })();
+  })(); */
 
   /* {
     const p = makePromise();
@@ -850,7 +864,7 @@ mesher.addEventListener('removeMesh', e => {
   } */
 
   {
-    mesher.addMesh('models/model.vrm');
+    mesher.addMesh('models/model.vrm', new THREE.Vector3(-3, 0, -2));
   }
 
   /* {
@@ -975,14 +989,25 @@ prefabsSearch.addEventListener('input', e => {
 document.addEventListener('dragover', e => {
   e.preventDefault();
 });
+/* const cache = {};
+Promise.all([
+  `https://ipfs.exokit.org/ipfs/QmYe7eKMKTYWecarNHJxfTeChijucQTaPLxGtjH79s71A3.glb`, // exo
+  `https://ipfs.exokit.org/ipfs/QmbyziPdYdKi1rKHiuStYqngsbUmhVtQmgY7ihjhvpTM5B.glb`, // avatar3
+  `https://ipfs.exokit.org/ipfs/QmbpGPzh8D3F69PzffQsU8oCd1fLbXefp64Ay8jxwCjdAN.glb`, // sword
+  `https://ipfs.exokit.org/ipfs/QmRBRF9bZKTZGqPmnaqeGj5RBJW7tQ2X5psskQ2qGCD7hK.glb`, // gloob
+].map(u => {
+  return fetch(u).then(res => res.blob()).then(b => {
+    cache[u] = b;
+  });
+})).then(() => {
+  console.log('loaded');
+});
 document.addEventListener('drop', async e => {
   e.preventDefault();
 
   if (e.dataTransfer.items.length > 0) {
     const item = e.dataTransfer.items[0];
-    /* if (item.kind === 'file') {
-      await _handleUpload(item.getAsFile());
-    } else */if (item.kind === 'string') {
+    if (item.kind === 'string') {
       const data = await new Promise((accept, reject) => {
         item.getAsString(accept);
       });
@@ -995,8 +1020,12 @@ document.addEventListener('drop', async e => {
       })();
       if (j !== null) {
         const {name, src} = j;
-        const res = await fetch(src);
-        const blob = await res.blob();
+        console.log('got name src', {name, src});
+        let blob = cache[src];
+        if (!blob) {
+          const res = await fetch(src);
+          blob = await res.blob();
+        }
         blob.name = name;
         const d = await XRPackage.compileFromFile(blob);
         const p = new XRPackage(d);
@@ -1009,11 +1038,99 @@ document.addEventListener('drop', async e => {
       }
     }
   }
-});
+}); */
+fetch('a.wbn')
+  .then(res => res.arrayBuffer())
+  .then(arrayBuffer => {
+    const p = new XRPackage(arrayBuffer);
+
+    return _requestSw({
+      method: 'hijack',
+      id: p.id,
+      files: p.files.map(f => ({
+        pathname: new URL(f.url).pathname,
+        body: f.response.body,
+      })),
+    }).then(() => new Promise((accept, reject) => {
+      p.addEventListener('load', e => {
+        accept();
+      }, {once: true});
+    }))
+    .then(() => {
+      console.log('add 1');
+      pe.add(p)
+        .then(() => {
+          console.log('add 2');
+
+          // debugger;
+        });
+    });
+  });
+fetch('avatar.wbn')
+  .then(res => res.arrayBuffer())
+  .then(arrayBuffer => {
+    const p = new XRPackage(arrayBuffer);
+
+    return new Promise((accept, reject) => {
+      p.addEventListener('load', e => {
+        accept();
+      }, {once: true});
+    })
+    .then(() => pe.add(p))
+    .then(() => {
+      console.log('loaded 1');
+      p.wearAvatar();
+      console.log('loaded 2');
+    });
+  });
+
+/* const peerPoseUpdateRate = 50;
+const localVector = new THREE.Vector3();
+let rig = null;
+let modelUrl = null;
+async function initLocalRig() {
+  const {url} = avatarModels[0];
+  modelUrl = `https://avatar-models.exokit.org/${url}`;
+  const model = await ModelLoader.loadModelUrl(modelUrl);
+  model.scene.traverse(o => {
+    o.frustumCulled = false;
+  });
+  rig = new Avatar(model, {
+    fingers: true,
+    hair: true,
+    visemes: true,
+    decapitate: true,
+    microphoneMediaStream: null,
+    // debug: !newModel,
+  });
+  container.add(rig.model);
+}
+initLocalRig()
+  .catch(err => {
+    console.warn(err);
+  });
+function updatePlayerFromCamera(camera) {
+  if (rig) {
+    rig.inputs.hmd.position.copy(camera.position);
+    rig.inputs.hmd.quaternion.copy(camera.quaternion);
+    rig.inputs.leftGamepad.position.copy(camera.position).add(localVector.set(0.3, -0.15, -0.5).applyQuaternion(camera.quaternion));
+    rig.inputs.leftGamepad.quaternion.copy(camera.quaternion);
+    rig.inputs.rightGamepad.position.copy(camera.position).add(localVector.set(-0.3, -0.15, -0.5).applyQuaternion(camera.quaternion));
+    rig.inputs.rightGamepad.quaternion.copy(camera.quaternion);
+
+    rig.update();
+  }
+} */
 
 const velocity = new THREE.Vector3();
 function animate() {
   renderer.state.reset();
+
+  if (hidden) {
+    parcelMeshes.forEach(p => {
+      p.parent && p.parent.remove(p);
+    });
+  }
 
   renderer.render(scene, camera);
 }
@@ -1052,6 +1169,8 @@ pe.addEventListener('tick', () => {
   }
 
   pe.setCamera(camera);
+
+  // updatePlayerFromCamera(camera);
 
   _loadParcelMeshes(orbitControls.target);
   parcelMeshes.forEach(parcelMesh => {

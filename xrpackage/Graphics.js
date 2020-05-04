@@ -76,6 +76,7 @@ class WebGLState {
 }
 
 const getContext = (oldGetContext => function getContext(type, init = {}) {
+  // console.log('get context', new Error().stack);
   const match = type.match(/^(?:experimental-)?(webgl2?)$/);
   if (match && (hasWebGL2 || match[1] !== 'webgl2')) {
     // window[symbols.ensureProxyContext]();
@@ -219,7 +220,7 @@ for (const k in WebGLRenderingContext.prototype) {
         };
       } else {
         ProxiedWebGLRenderingContext.prototype[k] = function() {
-          // console.log('set proxy state 1', k);
+          // console.log('set proxy state 1', k, window.location.href);
           this.setProxyState();
           const result = GlobalContext.proxyContext[k].apply(GlobalContext.proxyContext, arguments);
           // console.log('set proxy state 2', k);

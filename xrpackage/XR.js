@@ -113,6 +113,7 @@ class XRSession extends EventTarget {
     return this._inputSources.filter(inputSource => inputSource.connected);
   }
   requestAnimationFrame(fn) {
+    // console.log('request animation frame', window.location.href);
     if (this.onrequestanimationframe) {
       const animationFrame = this.onrequestanimationframe(timestamp => {
         this._rafs.splice(animationFrame, 1);
