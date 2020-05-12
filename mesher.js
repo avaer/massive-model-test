@@ -5,7 +5,7 @@ import {OBJLoader2} from './OBJLoader2.js';
 import {MTLLoader} from './MTLLoader.js';
 import {GLTFExporter} from './GLTFExporter.js';
 
-const NUM_POSITIONS = 1 * 1024 * 1024;
+// const NUM_POSITIONS = 1 * 1024 * 1024;
 const voxelWidth = 15;
 const voxelSize = 1;
 const pixelRatio = 3;
