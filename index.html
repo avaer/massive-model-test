@@ -44,7 +44,8 @@
       </div>
     </div>
 <script type=module>
-import {XRPackageEngine, XRPackage} from './xrpackage.js';
+import {XRPackageEngine, XRPackage} from 'https://xrpackage.org/xrpackage.js';
+
 import {OrbitControls} from './OrbitControls.js';
 import {GLTFLoader} from './GLTFLoader.js';
 
@@ -1001,7 +1002,7 @@ Promise.all([
   });
 })).then(() => {
   console.log('loaded');
-});
+}); */
 document.addEventListener('drop', async e => {
   e.preventDefault();
 
@@ -1021,11 +1022,8 @@ document.addEventListener('drop', async e => {
       if (j !== null) {
         const {name, src} = j;
         console.log('got name src', {name, src});
-        let blob = cache[src];
-        if (!blob) {
-          const res = await fetch(src);
-          blob = await res.blob();
-        }
+        const res = await fetch(src);
+        let blob = await res.blob();
         blob.name = name;
         const d = await XRPackage.compileFromFile(blob);
         const p = new XRPackage(d);
@@ -1038,33 +1036,13 @@ document.addEventListener('drop', async e => {
       }
     }
   }
-}); */
+});
+
 fetch('a.wbn')
   .then(res => res.arrayBuffer())
   .then(arrayBuffer => {
     const p = new XRPackage(arrayBuffer);
-
-    return _requestSw({
-      method: 'hijack',
-      id: p.id,
-      files: p.files.map(f => ({
-        pathname: new URL(f.url).pathname,
-        body: f.response.body,
-      })),
-    }).then(() => new Promise((accept, reject) => {
-      p.addEventListener('load', e => {
-        accept();
-      }, {once: true});
-    }))
-    .then(() => {
-      console.log('add 1');
-      pe.add(p)
-        .then(() => {
-          console.log('add 2');
-
-          // debugger;
-        });
-    });
+    pe.add(p);
   });
 fetch('avatar.wbn')
   .then(res => res.arrayBuffer())
@@ -1079,7 +1057,7 @@ fetch('avatar.wbn')
     .then(() => pe.add(p))
     .then(() => {
       console.log('loaded 1');
-      p.wearAvatar();
+      pe.wearAvatar(p);
       console.log('loaded 2');
     });
   });
